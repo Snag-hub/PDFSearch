@@ -57,6 +57,7 @@
             BtnSearch.TabIndex = 1;
             BtnSearch.Text = "Search";
             BtnSearch.UseVisualStyleBackColor = true;
+            BtnSearch.Click += BtnSearch_Click;
             // 
             // TxtSearch
             // 
@@ -84,7 +85,7 @@
             // 
             // dgvSearchResult
             // 
-            dgvSearchResult.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            dgvSearchResult.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             dgvSearchResult.BackgroundColor = SystemColors.Control;
             dgvSearchResult.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
             dgvSearchResult.GridColor = SystemColors.Control;
@@ -93,6 +94,7 @@
             dgvSearchResult.RowHeadersWidth = 51;
             dgvSearchResult.Size = new Size(1082, 413);
             dgvSearchResult.TabIndex = 4;
+            dgvSearchResult.DoubleClick += dgvSearchResult_DoubleClick;
             // 
             // Search
             // 

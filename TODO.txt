@@ -1,0 +1,8 @@
+Todo: 
+1. Side by side Extractor and Indexer in the background.
+2. Emersive Fontend.
+3. Try to implement single time indexing for a day.
+4. Make it robust
+5. Learn how to make setup with permissions and single path definer for default PDF Reader and 
+	How to make the license agreement to accept before installing etc.
+6. Trigger opening applicationn on launch of those pdf which will be searchable using our system.
