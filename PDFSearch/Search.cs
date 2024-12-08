@@ -1,13 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows.Forms;
-
+﻿
 namespace PDFSearch;
 
 public partial class Search : Form
@@ -15,6 +6,7 @@ public partial class Search : Form
     public Search()
     {
         InitializeComponent();
+        this.Load += async (s, e) => await ProcessIndexingInBackground();
     }
 
     /// <summary>
@@ -34,7 +26,7 @@ public partial class Search : Form
         }
         catch (Exception ex)
         {
-            MessageBox.Show($@"Error {ex.Message}", "Error Box", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show($@"Error {ex.Message}", @"Error Box", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
@@ -43,11 +35,11 @@ public partial class Search : Form
         try
         {
             LuceneIndexer.IndexDirectory(folderPath); // Call the directory-based indexer
-            MessageBox.Show(@"PDFs indexed successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(@"PDFs indexed successfully!", @"Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception ex)
         {
-            MessageBox.Show($@"Error while indexing: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show($@"Error while indexing: {ex.Message}", @"Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
@@ -60,7 +52,7 @@ public partial class Search : Form
 
             if (string.IsNullOrEmpty(searchTerm))
             {
-                MessageBox.Show(@"Please enter a search term.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(@"Please enter a search term.", @"Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
@@ -74,15 +66,19 @@ public partial class Search : Form
             if (results.Count > 0)
             {
                 dgvSearchResult.DataSource = results;
+                dgvSearchResult.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.AllCells;
+                var count = results.Count;
+                lblResult.Text = $@"{count} results found for ""{TxtSearch.Text}""";
             }
             else
             {
-                MessageBox.Show(@"No results found.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(@"No results found.", @"Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
+            
         }
         catch (Exception ex)
         {
-            MessageBox.Show($@"Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show($@"Error: {ex.Message}", @"Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
 
     }
@@ -108,7 +104,7 @@ public partial class Search : Form
         }
         catch (Exception ex)
         {
-            MessageBox.Show($@"Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show($@"Error: {ex.Message}", @"Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
@@ -143,18 +139,51 @@ public partial class Search : Form
         }
         catch (Exception ex)
         {
-            MessageBox.Show($@"Error opening PDF: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show($@"Error opening PDF: {ex.Message}", @"Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             Console.WriteLine($@"Error opening PDF: {ex.Message}");
         }
     }
-
-    private void Btn_Clean_Click(object sender, EventArgs e)
+    
+    private async Task ProcessIndexingInBackground()
     {
         try
         {
-            // Specify the directory path to index
-            const string directoryPath = @"E:\Freelance Work\Farohar\Farohar E-Document Library_Sample";
+            // Show a progress message
+            UpdateStatus("Indexing started...");
 
+            // Run the indexing in a background task
+            await Task.Run(() =>
+            {
+                const string directoryPath = @"E:\Freelance Work\Farohar\Farohar E-Document Library_Sample"; // Replace with the actual path
+                LuceneIndexer.IndexDirectory(directoryPath);
+            });
+
+            // Update the status when done
+            UpdateStatus("Indexing completed successfully.");
+        }
+        catch (Exception ex)
+        {
+            UpdateStatus($"Error during indexing: {ex.Message}");
+        }
+    }
+    
+    private void UpdateStatus(string message)
+    {
+        // Safely update the UI
+        if (InvokeRequired)
+        {
+            Invoke(new Action(() => statusLabel.Text = message));
+        }
+        else
+        {
+            statusLabel.Text = message;
+        }
+    }
+
+    private void BtnClean_Click(object sender, EventArgs e)
+    {
+        try
+        {
             // Clean the existing index directory
             LuceneIndexer.CleanIndexDirectory();
         }
@@ -162,5 +191,12 @@ public partial class Search : Form
         {
             MessageBox.Show($@"An error occurred: {ex.Message}");
         }
+    }
+
+    private void TxtSearch_KeyPress(object sender, KeyPressEventArgs e)
+    {
+        if (e.KeyChar != (char)Keys.Enter) return;
+        BtnSearch.PerformClick();
+        e.Handled = true;
     }
 }

@@ -47,10 +47,9 @@ public static class LuceneIndexer
             // Parallel processing of PDF files
             Parallel.ForEach(pdfFiles, pdfFilePath =>
             {
+                var lastModified = File.GetLastWriteTime(pdfFilePath);
                 try
                 {
-                    var lastModified = File.GetLastWriteTime(pdfFilePath);
-
                     // Ensure file is indexed if not already
                     lock (lockObject)
                     {
@@ -69,7 +68,7 @@ public static class LuceneIndexer
                                      {
                                          new StringField("FilePath", pdfFilePath, Field.Store.YES),
                                          new StringField("LastModified", lastModified.ToString("o"),
-                                             Field.Store.YES), // ISO 8601 format
+                                             Field.Store.YES), 
                                          new Int32Field("PageNumber", page.Key, Field.Store.YES),
                                          new TextField("Content", page.Value, Field.Store.YES)
                                      }))

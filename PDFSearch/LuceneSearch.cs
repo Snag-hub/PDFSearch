@@ -42,8 +42,7 @@ public static class LuceneSearcher
 
                 results.Add(new SearchResult(
                     filePath: doc.Get("FilePath"),
-                    pageNumber: int.Parse(doc.Get("PageNumber")),
-                    previewText: doc.Get("Content")
+                    pageNumber: int.Parse(doc.Get("PageNumber"))
                 ));
             }
         }
@@ -56,14 +55,13 @@ public static class LuceneSearcher
     }
 }
 
-public class SearchResult(string filePath, int pageNumber, string previewText)
+public class SearchResult(string filePath, int pageNumber)
 {
     public string FilePath { get; } = filePath;
     public int PageNumber { get; } = pageNumber;
-    public string PreviewText { get; } = previewText;
 
     public override string ToString()
     {
-        return $"File: {FilePath}, Page: {PageNumber}, Preview: {PreviewText}";
+        return $@"File: {FilePath}, Page: {PageNumber}";
     }
 }
