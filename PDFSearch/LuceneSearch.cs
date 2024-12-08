@@ -11,7 +11,7 @@ namespace PDFSearch;
 
 public static class LuceneSearcher
 {
-    private const string IndexPath = "LuceneIndex"; // Directory for Lucene index
+    private const string IndexPath = "Indexed Docs"; // Directory for Lucene index
 
     /// <summary>
     /// Searches the Lucene index for a given term and returns all matches with their details.

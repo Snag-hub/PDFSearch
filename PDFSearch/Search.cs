@@ -147,4 +147,20 @@ public partial class Search : Form
             Console.WriteLine($@"Error opening PDF: {ex.Message}");
         }
     }
+
+    private void Btn_Clean_Click(object sender, EventArgs e)
+    {
+        try
+        {
+            // Specify the directory path to index
+            const string directoryPath = @"E:\Freelance Work\Farohar\Farohar E-Document Library_Sample";
+
+            // Clean the existing index directory
+            LuceneIndexer.CleanIndexDirectory();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($@"An error occurred: {ex.Message}");
+        }
+    }
 }
