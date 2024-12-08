@@ -30,7 +30,8 @@ public static class LuceneSearcher
 
             var analyzer = new StandardAnalyzer(LuceneVersion.LUCENE_48);
             var parser = new QueryParser(LuceneVersion.LUCENE_48, "Content", analyzer);
-            var query = parser.Parse(searchTerm);
+            // var query = parser.Parse(searchTerm);
+            var query = parser.Parse($"\"{searchTerm}\"");
 
             // Search for all matching results
             var hits = searcher.Search(query, int.MaxValue).ScoreDocs;
@@ -48,7 +49,7 @@ public static class LuceneSearcher
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error searching for term {searchTerm}: {ex.Message}");
+            Console.WriteLine($@"Error searching for term {searchTerm}: {ex.Message}");
         }
 
         return results;

@@ -5,7 +5,7 @@ using UglyToad.PdfPig.Content;
 
 namespace PDFSearch;
 
-public static class PDFHelper
+public static class PdfHelper
 {
     /// <summary>
     /// Extracts text from a PDF file, page by page.
@@ -19,7 +19,7 @@ public static class PDFHelper
         try
         {
             using var pdfDoc = PdfDocument.Open(pdfFilePath);
-            int pageNum = 1;
+            var pageNum = 1;
 
             foreach (var page in pdfDoc.GetPages())
             {
@@ -29,7 +29,7 @@ public static class PDFHelper
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error extracting text from {pdfFilePath}: {ex.Message}");
+            Console.WriteLine($@"Error extracting text from {pdfFilePath}: {ex.Message}");
         }
 
         return textByPage;

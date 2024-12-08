@@ -28,41 +28,39 @@ public partial class Search : Form
         {
             using FolderBrowserDialog folderDialog = new();
 
-            if (folderDialog.ShowDialog() == DialogResult.OK)
-            {
-                string selectedPath = folderDialog.SelectedPath;
-                ProcessPdfFilesInFolder(selectedPath);
-            }
+            if (folderDialog.ShowDialog() != DialogResult.OK) return;
+            var selectedPath = folderDialog.SelectedPath;
+            ProcessPdfFilesInFolder(selectedPath);
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Error {ex.Message}", "Error Box", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show($@"Error {ex.Message}", "Error Box", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
-    private void ProcessPdfFilesInFolder(string folderPath)
+    private static void ProcessPdfFilesInFolder(string folderPath)
     {
-        // Get all PDF files in the folder and subdirectories
-        var pdfFiles = Directory.GetFiles(folderPath, "*.pdf", SearchOption.AllDirectories);
-
-        foreach (var pdfFile in pdfFiles)
+        try
         {
-            var textByPage = PDFHelper.ExtractTextFromPdf(pdfFile);
-            LuceneIndexer.IndexPdfContent(pdfFile, textByPage);
+            LuceneIndexer.IndexDirectory(folderPath); // Call the directory-based indexer
+            MessageBox.Show(@"PDFs indexed successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
-
-        MessageBox.Show("PDFs indexed successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        catch (Exception ex)
+        {
+            MessageBox.Show($@"Error while indexing: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
+
 
     private void BtnSearch_Click(object sender, EventArgs e)
     {
         try
         {
-            string searchTerm = TxtSearch.Text.Trim();
+            var searchTerm = TxtSearch.Text.Trim();
 
             if (string.IsNullOrEmpty(searchTerm))
             {
-                MessageBox.Show("Please enter a search term.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(@"Please enter a search term.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
@@ -79,12 +77,12 @@ public partial class Search : Form
             }
             else
             {
-                MessageBox.Show("No results found.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(@"No results found.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show($@"Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
 
     }
@@ -94,10 +92,10 @@ public partial class Search : Form
         try
         {
             // Check if a valid row is selected
-            if (dgvSearchResult.CurrentRow != null && dgvSearchResult.CurrentRow.DataBoundItem is SearchResult selectedResult)
+            if (dgvSearchResult.CurrentRow is { DataBoundItem: SearchResult selectedResult })
             {
-                string filePath = selectedResult.FilePath;
-                int pageNumber = selectedResult.PageNumber;
+                var filePath = selectedResult.FilePath;
+                var pageNumber = selectedResult.PageNumber;
 
                 // Open the PDF and navigate to the specific page
                 OpenPdfAtPage(filePath, pageNumber);
@@ -105,12 +103,12 @@ public partial class Search : Form
             else
             {
                 // Optional: Handle the case where no valid row is selected
-                MessageBox.Show("Please select a valid search result.", "No Selection", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(@"Please select a valid search result.", @"No Selection", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show($@"Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
@@ -119,18 +117,18 @@ public partial class Search : Form
         try
         {
             // Define the path to Adobe Acrobat Reader
-            string adobeReaderPath = @"C:\Program Files\Adobe\Acrobat DC\Acrobat\Acrobat.exe";
+            const string adobeReaderPath = @"C:\Program Files\Adobe\Acrobat DC\Acrobat\Acrobat.exe";
             //string adobeReaderPath = @"Acrobat.exe";
 
             // Format the command to open the PDF with the correct page in Acrobat
-            string arguments = $"/A \"page={pageNumber}\" \"{filePath}\"";
+            var arguments = $"/A \"page={pageNumber}\" \"{filePath}\"";
 
             // Check if Adobe Acrobat Reader is installed
             if (File.Exists(adobeReaderPath))
             {
                 // Open the PDF in Adobe Acrobat at the specified page
                 System.Diagnostics.Process.Start(adobeReaderPath, arguments);
-                Console.WriteLine($"Opening PDF: {filePath} at page {pageNumber}");
+                Console.WriteLine($@"Opening PDF: {filePath} at page {pageNumber}");
             }
             else
             {
@@ -140,13 +138,13 @@ public partial class Search : Form
                     FileName = filePath,
                     UseShellExecute = true // Uses the default viewer for PDFs
                 });
-                Console.WriteLine($"Opening PDF: {filePath} at page {pageNumber} in default viewer.");
+                Console.WriteLine($@"Opening PDF: {filePath} at page {pageNumber} in default viewer.");
             }
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Error opening PDF: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            Console.WriteLine($"Error opening PDF: {ex.Message}");
+            MessageBox.Show($@"Error opening PDF: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            Console.WriteLine($@"Error opening PDF: {ex.Message}");
         }
     }
 }
