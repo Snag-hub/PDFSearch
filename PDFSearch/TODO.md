@@ -7,3 +7,11 @@
 6. Trigger opening application on launch of those pdf which will be searchable using our system.
 7. Make it robust.
 8. Immersive Frontend.
+
+
+
+
+
+## Question
+1. Will the system have more than 1 pdf directory.
+2.  
