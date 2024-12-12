@@ -8,9 +8,11 @@ static class Program
     [STAThread]
     static void Main()
     {
-        // To customize application configuration such as set high DPI settings or default font,
-        // see https://aka.ms/applicationconfiguration.
-        ApplicationConfiguration.Initialize();
-        Application.Run(new Search());
+        string launchDirectory = Directory.GetCurrentDirectory(); // Get current directory
+        Console.WriteLine($"Application launched from: {launchDirectory}");
+
+        // Use the directory in your application logic
+        Search searchForm = new(launchDirectory);
+        Application.Run(searchForm);
     }
 }

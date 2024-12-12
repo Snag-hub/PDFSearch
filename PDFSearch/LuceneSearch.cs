@@ -3,65 +3,59 @@ using Lucene.Net.Index;
 using Lucene.Net.QueryParsers.Classic;
 using Lucene.Net.Search;
 using Lucene.Net.Store;
-using Lucene.Net.Util;
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Security.Cryptography;
+using System.Text;
 
-namespace PDFSearch;
-
-public static class LuceneSearcher
+namespace PDFSearch
 {
-    private const string IndexPath = "Indexed Docs"; // Directory for Lucene index
-
-    /// <summary>
-    /// Searches the Lucene index for a given term and returns all matches with their details.
-    /// </summary>
-    /// <param name="searchTerm">The term to search for.</param>
-    /// <returns>List of search results with file path, page number, and preview text.</returns>
-    public static List<SearchResult> SearchIndexWithPage(string searchTerm)
+    public static class LuceneSearcher
     {
-        var results = new List<SearchResult>();
-
-        try
+        private static string GetIndexFolderName(string folderPath)
         {
-            using var directory = FSDirectory.Open(IndexPath);
-            using var reader = DirectoryReader.Open(directory);
+            using var sha256 = SHA256.Create();
+            var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(folderPath));
+            return BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
+        }
+
+        public static List<SearchResult> SearchInDirectory(string queryText, string folderPath)
+        {
+            string baseIndexPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Index");
+            string uniqueIndexPath = Path.Combine(baseIndexPath, GetIndexFolderName(folderPath));
+
+            if (!System.IO.Directory.Exists(uniqueIndexPath))
+                throw new DirectoryNotFoundException($"No index found for directory: {folderPath}");
+
+            using var dir = FSDirectory.Open(uniqueIndexPath);
+            using var analyzer = new StandardAnalyzer(Lucene.Net.Util.LuceneVersion.LUCENE_48);
+            var parser = new QueryParser(Lucene.Net.Util.LuceneVersion.LUCENE_48, "Content", analyzer);
+            var query = parser.Parse($"\"{queryText}\"");
+
+            using var reader = DirectoryReader.Open(dir);
             var searcher = new IndexSearcher(reader);
 
-            var analyzer = new StandardAnalyzer(LuceneVersion.LUCENE_48);
-            var parser = new QueryParser(LuceneVersion.LUCENE_48, "Content", analyzer);
-            // var query = parser.Parse(searchTerm);
-            var query = parser.Parse($"\"{searchTerm}\"");
-
-            // Search for all matching results
             var hits = searcher.Search(query, int.MaxValue).ScoreDocs;
+            var results = new List<SearchResult>();
 
             foreach (var hit in hits)
             {
                 var doc = searcher.Doc(hit.Doc);
-
-                results.Add(new SearchResult(
-                    filePath: doc.Get("FilePath"),
-                    pageNumber: int.Parse(doc.Get("PageNumber"))
-                ));
+                results.Add(new SearchResult
+                {
+                    FilePath = doc.Get("FilePath"),
+                    PageNumber = int.Parse(doc.Get("PageNumber"))
+                });
             }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($@"Error searching for term {searchTerm}: {ex.Message}");
-        }
 
-        return results;
+            return results;
+        }
     }
-}
 
-public class SearchResult(string filePath, int pageNumber)
-{
-    public string FilePath { get; } = filePath;
-    public int PageNumber { get; } = pageNumber;
-
-    public override string ToString()
+    public class SearchResult
     {
-        return $@"File: {FilePath}, Page: {PageNumber}";
+        public string FilePath { get; set; }
+        public int PageNumber { get; set; }
     }
 }
