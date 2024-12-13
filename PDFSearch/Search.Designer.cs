@@ -69,7 +69,7 @@
             TxtSearch.PlaceholderText = "Enter term to search...";
             TxtSearch.Size = new Size(301, 27);
             TxtSearch.TabIndex = 2;
-            //TxtSearch.KeyPress += TxtSearch_KeyPress;
+            TxtSearch.KeyPress += TxtSearch_KeyPress;
             // 
             // dgvSearchResult
             // 
@@ -82,7 +82,7 @@
             dgvSearchResult.RowHeadersWidth = 51;
             dgvSearchResult.Size = new Size(1082, 407);
             dgvSearchResult.TabIndex = 4;
-            //dgvSearchResult.DoubleClick += dgvSearchResult_DoubleClick;
+            dgvSearchResult.DoubleClick += dgvSearchResult_DoubleClick;
             // 
             // statusLabel
             // 
@@ -101,7 +101,7 @@
             BtnClean.TabIndex = 6;
             BtnClean.Text = "Clean Indexing";
             BtnClean.UseVisualStyleBackColor = true;
-            //BtnClean.Click += BtnClean_Click;
+            BtnClean.Click += BtnClean_Click;
             // 
             // lblResult
             // 

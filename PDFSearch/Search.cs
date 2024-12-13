@@ -78,6 +78,67 @@ public partial class Search : Form
         }
     }
 
+    private void dgvSearchResult_DoubleClick(object sender, EventArgs e)
+    {
+        try
+        {
+            // Check if a valid row is selected
+            if (dgvSearchResult.CurrentRow is { DataBoundItem: SearchResult selectedResult })
+            {
+                var filePath = selectedResult.FilePath;
+                var pageNumber = selectedResult.PageNumber;
+
+                // Open the PDF and navigate to the specific page
+                OpenPdfAtPage(filePath, pageNumber);
+            }
+            else
+            {
+                // Optional: Handle the case where no valid row is selected
+                MessageBox.Show(@"Please select a valid search result.", @"No Selection", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($@"Error: {ex.Message}", @"Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private static void OpenPdfAtPage(string filePath, int pageNumber)
+    {
+        try
+        {
+            // Define the path to Adobe Acrobat Reader
+            const string adobeReaderPath = @"C:\Program Files\Adobe\Acrobat DC\Acrobat\Acrobat.exe";
+            //string adobeReaderPath = @"Acrobat.exe";
+
+            // Format the command to open the PDF with the correct page in Acrobat
+            var arguments = $"/A \"page={pageNumber}\" \"{filePath}\"";
+
+            // Check if Adobe Acrobat Reader is installed
+            if (File.Exists(adobeReaderPath))
+            {
+                // Open the PDF in Adobe Acrobat at the specified page
+                System.Diagnostics.Process.Start(adobeReaderPath, arguments);
+                Console.WriteLine($@"Opening PDF: {filePath} at page {pageNumber}");
+            }
+            else
+            {
+                // If Acrobat is not installed, fallback to the default PDF viewer
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = filePath,
+                    UseShellExecute = true // Uses the default viewer for PDFs
+                });
+                Console.WriteLine($@"Opening PDF: {filePath} at page {pageNumber} in default viewer.");
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($@"Error opening PDF: {ex.Message}", @"Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            Console.WriteLine($@"Error opening PDF: {ex.Message}");
+        }
+    }
+
     private async Task ProcessIndexingInBackground()
     {
         try
@@ -102,5 +163,24 @@ public partial class Search : Form
         {
             statusLabel.Text = message;
         }
+    }
+    private void BtnClean_Click(object sender, EventArgs e)
+    {
+        try
+        {
+            // Clean the existing index directory
+            LuceneIndexer.CleanAllIndexes();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($@"An error occurred: {ex.Message}");
+        }
+    }
+
+    private void TxtSearch_KeyPress(object sender, KeyPressEventArgs e)
+    {
+        if (e.KeyChar != (char)Keys.Enter) return;
+        BtnSearch.PerformClick();
+        e.Handled = true;
     }
 }

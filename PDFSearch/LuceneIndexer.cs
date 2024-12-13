@@ -11,6 +11,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Xml;
 using Directory = System.IO.Directory;
+using System.Collections.Concurrent;
 
 namespace PDFSearch;
 
@@ -46,6 +47,8 @@ public static class LuceneIndexer
     }
 
     // Index files in a specific folder
+
+    // Index files in a specific folder
     public static void IndexDirectory(string folderPath)
     {
         if (!Directory.Exists(folderPath))
@@ -57,7 +60,8 @@ public static class LuceneIndexer
         Directory.CreateDirectory(uniqueIndexPath);
 
         var metadata = LoadMetadata(); // Load existing metadata
-        bool metadataUpdated = false;
+        var metadataUpdated = false;
+        var metadataLock = new object(); // Lock object for thread-safe updates
 
         using var dir = FSDirectory.Open(uniqueIndexPath);
         using var analyzer = new StandardAnalyzer(Lucene.Net.Util.LuceneVersion.LUCENE_48);
@@ -65,7 +69,11 @@ public static class LuceneIndexer
 
         var pdfFiles = Directory.GetFiles(folderPath, "*.pdf", SearchOption.AllDirectories);
 
-        foreach (var pdfFile in pdfFiles)
+        // Use a thread-safe collection to track updated metadata
+        var updatedMetadata = new ConcurrentDictionary<string, DateTime>();
+
+        // Process files in parallel
+        Parallel.ForEach(pdfFiles, pdfFile =>
         {
             var lastModified = File.GetLastWriteTimeUtc(pdfFile);
 
@@ -73,7 +81,7 @@ public static class LuceneIndexer
             if (metadata.TryGetValue(pdfFile, out var indexedTime) && indexedTime >= lastModified)
             {
                 Console.WriteLine($"Skipping already indexed file (no changes): {pdfFile}");
-                continue; // File is already indexed and hasn't been modified
+                return;
             }
 
             try
@@ -88,12 +96,16 @@ public static class LuceneIndexer
                         new Int32Field("PageNumber", page, Field.Store.YES),
                         new TextField("Content", text, Field.Store.NO)
                     };
-                    writer.AddDocument(doc);
+
+                    // Synchronize writer access
+                    lock (writer)
+                    {
+                        writer.AddDocument(doc);
+                    }
                 }
 
-                // Update metadata for the indexed file
-                metadata[pdfFile] = lastModified;
-                metadataUpdated = true;
+                // Update metadata in a thread-safe way
+                updatedMetadata[pdfFile] = lastModified;
 
                 // Debug message indicating successful indexing of the file
                 Console.WriteLine($"Successfully indexed file: {pdfFile}");
@@ -102,19 +114,28 @@ public static class LuceneIndexer
             {
                 Console.WriteLine($"Error processing file '{pdfFile}': {ex.Message}");
             }
-        }
+        });
 
         writer.Flush(triggerMerge: false, applyAllDeletes: false);
 
-        // Save updated metadata if any files were indexed
-        if (metadataUpdated)
+        // Update metadata after parallel processing
+        if (!updatedMetadata.IsEmpty)
         {
-            SaveMetadata(metadata);
-            Console.WriteLine("Metadata updated.");
+            lock (metadataLock)
+            {
+                foreach (var entry in updatedMetadata)
+                {
+                    metadata[entry.Key] = entry.Value;
+                }
+
+                SaveMetadata(metadata);
+                Console.WriteLine("Metadata updated.");
+            }
         }
 
         Console.WriteLine($"Indexing completed for directory: {folderPath}. Index stored at: {uniqueIndexPath}");
     }
+
 
     // Clean all existing indexes and metadata
     public static void CleanAllIndexes()

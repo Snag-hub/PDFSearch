@@ -9,6 +9,7 @@
 8. Immersive Frontend.
 
 11. Make parellel indexing and extraction and other features like "Enter" to search, "doubleclick" to open pdf with that pagenumber, etc.
+12. 
 
 
 
