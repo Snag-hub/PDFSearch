@@ -17,8 +17,21 @@ namespace PDFSearch;
 
 public static class LuceneIndexer
 {
+    // Define a base path for storing application-specific data in AppData
+    private static readonly string AppDataBasePath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "No1Knows",
+        "Index"
+    );
+
     // Metadata file path to store information about indexed files
-    private static readonly string MetadataFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "indexedFiles.json");
+    private static readonly string MetadataFilePath = Path.Combine(AppDataBasePath, "indexedFiles.json");
+
+    // Ensure the base path exists when the application starts
+    static LuceneIndexer()
+    {
+        Directory.CreateDirectory(AppDataBasePath);
+    }
 
     // Load metadata from the file to track indexed files
     private static Dictionary<string, DateTime> LoadMetadata()
@@ -35,6 +48,9 @@ public static class LuceneIndexer
     private static void SaveMetadata(Dictionary<string, DateTime> metadata)
     {
         var json = JsonSerializer.Serialize(metadata);
+
+        // Ensure the directory exists before saving
+        Directory.CreateDirectory(AppDataBasePath);
         File.WriteAllText(MetadataFilePath, json);
     }
 
@@ -47,20 +63,16 @@ public static class LuceneIndexer
     }
 
     // Index files in a specific folder
-
-    // Index files in a specific folder
     public static void IndexDirectory(string folderPath)
     {
         if (!Directory.Exists(folderPath))
             throw new DirectoryNotFoundException($"The folder '{folderPath}' does not exist.");
 
-        // Create an index folder based on the folder path
-        string baseIndexPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Index");
-        string uniqueIndexPath = Path.Combine(baseIndexPath, GetIndexFolderName(folderPath));
+        // Create an index folder based on the folder path within AppData
+        string uniqueIndexPath = Path.Combine(AppDataBasePath, GetIndexFolderName(folderPath));
         Directory.CreateDirectory(uniqueIndexPath);
 
         var metadata = LoadMetadata(); // Load existing metadata
-        var metadataUpdated = false;
         var metadataLock = new object(); // Lock object for thread-safe updates
 
         using var dir = FSDirectory.Open(uniqueIndexPath);
@@ -136,21 +148,13 @@ public static class LuceneIndexer
         Console.WriteLine($"Indexing completed for directory: {folderPath}. Index stored at: {uniqueIndexPath}");
     }
 
-
     // Clean all existing indexes and metadata
     public static void CleanAllIndexes()
     {
-        string baseIndexPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Index");
-        if (Directory.Exists(baseIndexPath))
+        if (Directory.Exists(AppDataBasePath))
         {
-            Directory.Delete(baseIndexPath, recursive: true);
+            Directory.Delete(AppDataBasePath, recursive: true);
             Console.WriteLine("All indexes have been cleaned.");
-        }
-
-        if (File.Exists(MetadataFilePath))
-        {
-            File.Delete(MetadataFilePath);
-            Console.WriteLine("Metadata has been cleaned.");
         }
     }
 }
