@@ -42,10 +42,10 @@
             // 
             // button1
             // 
-            button1.Location = new Point(112, 19);
+            button1.Location = new Point(19, 18);
             button1.Name = "button1";
             button1.Size = new Size(124, 29);
-            button1.TabIndex = 0;
+            button1.TabIndex = 11;
             button1.Text = "LoadPDF";
             button1.UseVisualStyleBackColor = true;
             button1.Click += button1_Click;
@@ -53,10 +53,12 @@
             // BtnSearch
             // 
             BtnSearch.Anchor = AnchorStyles.Top;
-            BtnSearch.Location = new Point(612, 59);
+            BtnSearch.Font = new Font("Segoe UI Semibold", 12F, FontStyle.Bold, GraphicsUnit.Point, 0);
+            BtnSearch.Location = new Point(407, 60);
             BtnSearch.Name = "BtnSearch";
-            BtnSearch.Size = new Size(94, 29);
-            BtnSearch.TabIndex = 1;
+            BtnSearch.Padding = new Padding(1);
+            BtnSearch.Size = new Size(180, 35);
+            BtnSearch.TabIndex = 2;
             BtnSearch.Text = "Search";
             BtnSearch.UseVisualStyleBackColor = true;
             BtnSearch.Click += BtnSearch_Click;
@@ -64,11 +66,12 @@
             // TxtSearch
             // 
             TxtSearch.Anchor = AnchorStyles.Top;
-            TxtSearch.Location = new Point(295, 60);
+            TxtSearch.Font = new Font("Segoe UI Semibold", 12F, FontStyle.Bold, GraphicsUnit.Point, 0);
+            TxtSearch.Location = new Point(19, 61);
             TxtSearch.Name = "TxtSearch";
             TxtSearch.PlaceholderText = "Enter term to search...";
-            TxtSearch.Size = new Size(301, 27);
-            TxtSearch.TabIndex = 2;
+            TxtSearch.Size = new Size(371, 34);
+            TxtSearch.TabIndex = 1;
             TxtSearch.KeyPress += TxtSearch_KeyPress;
             // 
             // dgvSearchResult
@@ -77,28 +80,30 @@
             dgvSearchResult.BackgroundColor = SystemColors.Control;
             dgvSearchResult.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
             dgvSearchResult.GridColor = SystemColors.Control;
-            dgvSearchResult.Location = new Point(73, 138);
+            dgvSearchResult.Location = new Point(12, 138);
             dgvSearchResult.Name = "dgvSearchResult";
             dgvSearchResult.RowHeadersWidth = 51;
-            dgvSearchResult.Size = new Size(1082, 407);
-            dgvSearchResult.TabIndex = 4;
+            dgvSearchResult.Size = new Size(968, 476);
+            dgvSearchResult.TabIndex = 3;
             dgvSearchResult.DoubleClick += dgvSearchResult_DoubleClick;
             // 
             // statusLabel
             // 
-            statusLabel.Anchor = AnchorStyles.Top;
-            statusLabel.Location = new Point(295, 23);
+            statusLabel.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            statusLabel.Location = new Point(197, 617);
             statusLabel.Name = "statusLabel";
-            statusLabel.Size = new Size(541, 23);
+            statusLabel.Size = new Size(604, 41);
             statusLabel.TabIndex = 5;
             statusLabel.Text = "Status: ";
+            statusLabel.TextAlign = ContentAlignment.MiddleCenter;
             // 
             // BtnClean
             // 
-            BtnClean.Location = new Point(112, 59);
+            BtnClean.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            BtnClean.Location = new Point(463, 18);
             BtnClean.Name = "BtnClean";
             BtnClean.Size = new Size(124, 29);
-            BtnClean.TabIndex = 6;
+            BtnClean.TabIndex = 10;
             BtnClean.Text = "Clean Indexing";
             BtnClean.UseVisualStyleBackColor = true;
             BtnClean.Click += BtnClean_Click;
@@ -106,16 +111,18 @@
             // lblResult
             // 
             lblResult.Anchor = AnchorStyles.Top;
-            lblResult.Location = new Point(295, 100);
+            lblResult.ForeColor = Color.DarkOliveGreen;
+            lblResult.Location = new Point(84, 96);
             lblResult.Name = "lblResult";
             lblResult.Padding = new Padding(2);
             lblResult.Size = new Size(411, 23);
             lblResult.TabIndex = 7;
+            lblResult.Text = " ";
+            lblResult.TextAlign = ContentAlignment.MiddleCenter;
             // 
             // groupBox1
             // 
             groupBox1.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            groupBox1.Controls.Add(statusLabel);
             groupBox1.Controls.Add(lblResult);
             groupBox1.Controls.Add(button1);
             groupBox1.Controls.Add(BtnSearch);
@@ -123,7 +130,7 @@
             groupBox1.Controls.Add(TxtSearch);
             groupBox1.Location = new Point(197, -3);
             groupBox1.Name = "groupBox1";
-            groupBox1.Size = new Size(842, 126);
+            groupBox1.Size = new Size(604, 126);
             groupBox1.TabIndex = 8;
             groupBox1.TabStop = false;
             // 
@@ -131,7 +138,8 @@
             // 
             AutoScaleDimensions = new SizeF(8F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(1230, 553);
+            ClientSize = new Size(992, 663);
+            Controls.Add(statusLabel);
             Controls.Add(groupBox1);
             Controls.Add(dgvSearchResult);
             Name = "Search";
