@@ -21,7 +21,7 @@
         }
         "Entry"
         {
-        "MsmKey" = "8:_60D25613097B4046A12CE132519B247F"
+        "MsmKey" = "8:_352E2739D572472790C50D332BF6F302"
         "OwnerKey" = "8:_UNDEFINED"
         "MsmSig" = "8:_UNDEFINED"
         }
@@ -49,6 +49,22 @@
         "PrivateKeyFile" = "8:"
         "TimeStampServer" = "8:"
         "InstallerBootstrapper" = "3:2"
+            "BootstrapperCfg:{63ACBE69-63AA-4F98-B2B6-99F9E24495F2}"
+            {
+            "Enabled" = "11:TRUE"
+            "PromptEnabled" = "11:TRUE"
+            "PrerequisitesLocation" = "2:1"
+            "Url" = "8:"
+            "ComponentsUrl" = "8:"
+                "Items"
+                {
+                    "{EDC2488A-8267-493A-A98E-7D9C3B36CDF3}:.NETFramework,Version=v4.7.2"
+                    {
+                    "Name" = "8:Microsoft .NET Framework 4.7.2 (x86 and x64)"
+                    "ProductCode" = "8:.NETFramework,Version=v4.7.2"
+                    }
+                }
+            }
         }
         "Release"
         {
@@ -65,6 +81,14 @@
         "PrivateKeyFile" = "8:"
         "TimeStampServer" = "8:"
         "InstallerBootstrapper" = "3:2"
+            "BootstrapperCfg:{63ACBE69-63AA-4F98-B2B6-99F9E24495F2}"
+            {
+            "Enabled" = "11:TRUE"
+            "PromptEnabled" = "11:TRUE"
+            "PrerequisitesLocation" = "2:1"
+            "Url" = "8:"
+            "ComponentsUrl" = "8:"
+            }
         }
     }
     "Deployable"
@@ -96,10 +120,10 @@
         }
         "File"
         {
-            "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_60D25613097B4046A12CE132519B247F"
+            "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_352E2739D572472790C50D332BF6F302"
             {
-            "SourcePath" = "8:C:\\Users\\SNAG\\Downloads\\FIP_ICON.ico"
-            "TargetName" = "8:FIP_ICON.ico"
+            "SourcePath" = "8:C:\\Users\\SNAG\\Downloads\\paper.ico"
+            "TargetName" = "8:paper.ico"
             "Tag" = "8:"
             "Folder" = "8:_6C0B32F699A1416DBE35B0B826440F03"
             "Condition" = "8:"
@@ -193,13 +217,13 @@
         "Name" = "8:Microsoft Visual Studio"
         "ProductName" = "8:FindInPDFs"
         "ProductCode" = "8:{BC4A004F-8BEB-4D83-A734-CECD0D9BDB9A}"
-        "PackageCode" = "8:{073234B0-526C-466A-85F9-D64D7ADA40FE}"
+        "PackageCode" = "8:{DB1A1FB0-F36B-44D4-869B-D93FF2DBAEEC}"
         "UpgradeCode" = "8:{14501843-3873-4187-9811-C0C322C47958}"
         "AspNetVersion" = "8:4.0.30319.0"
         "RestartWWWService" = "11:FALSE"
         "RemovePreviousVersions" = "11:FALSE"
         "DetectNewerInstalledVersion" = "11:TRUE"
-        "InstallAllUsers" = "11:TRUE"
+        "InstallAllUsers" = "11:FALSE"
         "ProductVersion" = "8:1.0.0"
         "Manufacturer" = "8:No1Knows"
         "ARPHELPTELEPHONE" = "8:"
@@ -210,7 +234,7 @@
         "Keywords" = "8:"
         "ARPCOMMENTS" = "8:"
         "ARPURLINFOABOUT" = "8:"
-        "ARPPRODUCTICON" = "8:"
+        "ARPPRODUCTICON" = "8:_352E2739D572472790C50D332BF6F302"
         "ARPIconIndex" = "3:0"
         "SearchPath" = "8:"
         "UseSystemSearchPath" = "11:TRUE"
@@ -338,7 +362,7 @@
                                                     "Condition" = "8:"
                                                     "Transitive" = "11:FALSE"
                                                     "ValueTypes" = "3:1"
-                                                    "Value" = "8:C:\\Program Files\\[Manufacturer]\\[ProductName]\\PDFSearch.exe \"%V'"
+                                                    "Value" = "8:C:\\Program Files\\[Manufacturer]\\[ProductName]\\PDFSearch.exe \"%V\""
                                                     }
                                                 }
                                             }
@@ -359,7 +383,7 @@
                                             "Condition" = "8:"
                                             "Transitive" = "11:FALSE"
                                             "ValueTypes" = "3:1"
-                                            "Value" = "8:C:\\Program Files\\[Manufacturer]\\[ProductName]\\FIP_ICON.ico"
+                                            "Value" = "8:C:\\Program Files\\[Manufacturer]\\[ProductName]\\paper.ico"
                                             }
                                         }
                                     }
@@ -413,7 +437,7 @@
                                                             "Condition" = "8:"
                                                             "Transitive" = "11:FALSE"
                                                             "ValueTypes" = "3:1"
-                                                            "Value" = "8:C:\\Program Files\\[Manufacturer]\\[ProductName]\\PDFSearch.exe \"%V'"
+                                                            "Value" = "8:C:\\Program Files\\[Manufacturer]\\[ProductName]\\PDFSearch.exe \"%V\""
                                                             }
                                                         }
                                                     }
@@ -426,7 +450,7 @@
                                                     "Condition" = "8:"
                                                     "Transitive" = "11:FALSE"
                                                     "ValueTypes" = "3:1"
-                                                    "Value" = "8:C:\\Program Files\\[Manufacturer]\\[ProductName]\\FIP_ICON.ico"
+                                                    "Value" = "8:C:\\Program Files\\[Manufacturer]\\[ProductName]\\paper.ico"
                                                     }
                                                     "{ADCFDA98-8FDD-45E4-90BC-E3D20B029870}:_E1F1A902A499429AA49C7D2CF668873E"
                                                     {
@@ -484,7 +508,7 @@
             "Target" = "8:_09BD68C4E3E74FB6B4E93C1EDED37187"
             "Folder" = "8:_9E872BBC34B644D7AC0941D8C69F46C7"
             "WorkingFolder" = "8:_6C0B32F699A1416DBE35B0B826440F03"
-            "Icon" = "8:_60D25613097B4046A12CE132519B247F"
+            "Icon" = "8:_352E2739D572472790C50D332BF6F302"
             "Feature" = "8:"
             }
             "{970C0BB2-C7D0-45D7-ABFA-7EC378858BC0}:_91951D6E358B445C8A77BB4B2EE8F1A4"
@@ -498,7 +522,7 @@
             "Target" = "8:_09BD68C4E3E74FB6B4E93C1EDED37187"
             "Folder" = "8:_AB39F83618CB44CB93C40292B76685F7"
             "WorkingFolder" = "8:_6C0B32F699A1416DBE35B0B826440F03"
-            "Icon" = "8:_60D25613097B4046A12CE132519B247F"
+            "Icon" = "8:_352E2739D572472790C50D332BF6F302"
             "Feature" = "8:"
             }
         }
@@ -845,7 +869,7 @@
         {
             "{5259A561-127C-4D43-A0A1-72F10C7B3BF8}:_09BD68C4E3E74FB6B4E93C1EDED37187"
             {
-            "SourcePath" = "8:..\\PDFSearch\\obj\\Release\\net8.0-windows\\apphost.exe"
+            "SourcePath" = "8:..\\PDFSearch\\obj\\Debug\\net8.0-windows\\apphost.exe"
             "TargetName" = "8:"
             "Tag" = "8:"
             "Folder" = "8:_6C0B32F699A1416DBE35B0B826440F03"

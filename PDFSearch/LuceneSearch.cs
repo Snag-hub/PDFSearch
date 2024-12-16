@@ -48,6 +48,7 @@ public static class LuceneSearcher
             results.Add(new SearchResult
             {
                 FilePath = doc.Get("FilePath"),
+                RelativePath = doc.Get("RelativePath"),
                 PageNumber = int.Parse(doc.Get("PageNumber"))
             });
         }
@@ -59,5 +60,6 @@ public static class LuceneSearcher
 public class SearchResult
 {
     public string FilePath { get; set; }
+    public string RelativePath { get; set; }
     public int PageNumber { get; set; }
 }

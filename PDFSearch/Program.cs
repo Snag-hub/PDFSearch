@@ -1,42 +1,28 @@
-//namespace PDFSearch;
-
-//static class Program
-//{
-//    /// <summary>
-//    ///  The main entry point for the application.
-//    /// </summary>
-//    [STAThread]
-//    static void Main()
-//    {
-//        string launchDirectory = Directory.GetCurrentDirectory(); // Get current directory
-//        Console.WriteLine($"Application launched from: {launchDirectory}");
-
-//        // Use the directory in your application logic
-//        Search searchForm = new(launchDirectory);
-//        Application.Run(searchForm);
-//    }
-//}
-
 namespace PDFSearch;
 
-static class Program
+internal static class Program
 {
     [STAThread]
-    static void Main(string[] args)
+    private static void Main(string[] args)
     {
         string folderPath;
 
         if (args.Length > 0)
         {
             folderPath = args[0]; // Path from the context menu
+            //MessageBox.Show($"Opening location in Args: {folderPath}", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         else
         {
             folderPath = Environment.CurrentDirectory; // Default fallback
+            //MessageBox.Show($"Opening location in Default: {folderPath}", "Info", MessageBoxButtons.OK,                MessageBoxIcon.Information);
         }
 
-        if (Directory.Exists(folderPath))
+        var path = folderPath.Trim();
+
+        if (Directory.Exists(path))
         {
+            //MessageBox.Show($"Opening location in Directory: {folderPath}", "Checking location", MessageBoxButtons.OK, MessageBoxIcon.Information);
             Console.WriteLine($"Opening location: {folderPath}");
             Application.Run(new Search(folderPath));
         }

@@ -39,9 +39,9 @@ public static class LuceneIndexer
         if (File.Exists(MetadataFilePath))
         {
             var json = File.ReadAllText(MetadataFilePath);
-            return JsonSerializer.Deserialize<Dictionary<string, DateTime>>(json) ?? new Dictionary<string, DateTime>();
+            return JsonSerializer.Deserialize<Dictionary<string, DateTime>>(json) ?? [];
         }
-        return new Dictionary<string, DateTime>();
+        return [];
     }
 
     // Save metadata to the file after updating
@@ -89,6 +89,8 @@ public static class LuceneIndexer
         {
             var lastModified = File.GetLastWriteTimeUtc(pdfFile);
 
+            var relativePath = Path.GetRelativePath(folderPath, pdfFile).Replace(Path.DirectorySeparatorChar, '➜'); // Direct relative path calculation
+
             // Skip indexing if the file has already been indexed and not modified
             if (metadata.TryGetValue(pdfFile, out var indexedTime) && indexedTime >= lastModified)
             {
@@ -105,6 +107,7 @@ public static class LuceneIndexer
                     var doc = new Document
                     {
                         new StringField("FilePath", pdfFile, Field.Store.YES),
+                        new StringField("RelativePath", relativePath, Field.Store.YES),
                         new Int32Field("PageNumber", page, Field.Store.YES),
                         new TextField("Content", text, Field.Store.NO)
                     };

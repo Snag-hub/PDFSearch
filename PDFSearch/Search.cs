@@ -57,13 +57,13 @@ public partial class Search : Form
                 return;
             }
 
-            string currentDirectory = _launchDirectory;
-            var results = LuceneSearcher.SearchInDirectory(searchTerm, currentDirectory);
+            var results = LuceneSearcher.SearchInDirectory(searchTerm, _launchDirectory);
 
             dgvSearchResult.DataSource = null;
             if (results.Count > 0)
             {
                 dgvSearchResult.DataSource = results;
+                dgvSearchResult.Columns["FilePath"].Visible = false;
                 dgvSearchResult.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.AllCells;
                 lblResult.Text = $"{results.Count} results found for \"{searchTerm}\"";
             }
