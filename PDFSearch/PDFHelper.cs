@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.Content;
 
@@ -7,29 +8,43 @@ namespace PDFSearch;
 
 public static class PdfHelper
 {
-    /// <summary>
-    /// Extracts text from a PDF file, page by page.
-    /// </summary>
-    /// <param name="pdfFilePath">Path to the PDF file.</param>
-    /// <returns>A dictionary where the key is the page number and the value is the text on that page.</returns>
-    public static Dictionary<int, string> ExtractTextFromPdf(string pdfFilePath)
+    public static Dictionary<string, Dictionary<int, string>> ExtractTextFromMultipleDirectories(IEnumerable<string> directories)
     {
-        var textByPage = new Dictionary<int, string>();
+        var extractedData = new Dictionary<string, Dictionary<int, string>>();
 
-        try
+        foreach (var directory in directories)
         {
-            using var pdfDoc = PdfDocument.Open(pdfFilePath);
-            var pageNum = 1;
-
-            foreach (var page in pdfDoc.GetPages())
+            if (!Directory.Exists(directory))
             {
-                textByPage[pageNum] = page.Text;
-                pageNum++;
+                Console.WriteLine($"Directory does not exist: {directory}");
+                continue;
+            }
+
+            var pdfFiles = Directory.GetFiles(directory, "*.pdf", SearchOption.AllDirectories);
+            foreach (var pdfFile in pdfFiles)
+            {
+                try
+                {
+                    var textByPage = ExtractTextFromPdfPages(pdfFile);
+                    extractedData[pdfFile] = textByPage;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error processing file {pdfFile}: {ex.Message}");
+                }
             }
         }
-        catch (Exception ex)
+        return extractedData;
+    }
+
+    public static Dictionary<int, string> ExtractTextFromPdfPages(string pdfFilePath)
+    {
+        var textByPage = new Dictionary<int, string>();
+        using var pdfDoc = PdfDocument.Open(pdfFilePath);
+
+        foreach (var page in pdfDoc.GetPages())
         {
-            Console.WriteLine($@"Error extracting text from {pdfFilePath}: {ex.Message}");
+            textByPage[page.Number] = page.Text;
         }
 
         return textByPage;

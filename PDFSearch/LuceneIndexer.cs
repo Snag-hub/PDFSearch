@@ -2,149 +2,162 @@
 using Lucene.Net.Documents;
 using Lucene.Net.Index;
 using Lucene.Net.Store;
-using Lucene.Net.Util;
+using System.Text.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Lucene.Net.Search;
+using System.Security.Cryptography;
+using System.Text;
+using System.Xml;
 using Directory = System.IO.Directory;
+using System.Collections.Concurrent;
 
 namespace PDFSearch;
 
 public static class LuceneIndexer
 {
-    private const string IndexPath = "Indexed Docs"; // Directory to store index
+    // Define a base path for storing application-specific data in AppData
+    private static readonly string AppDataBasePath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "No1Knows",
+        "Index"
+    );
 
-    /// <summary>
-    /// Indexes a directory and all of its subdirectories of PDF files, appending new files to the existing index and ignoring already indexed ones.
-    /// </summary>
-    /// <param name="directoryPath">The root directory containing PDF files.</param>
-    public static void IndexDirectory(string directoryPath)
+    // Metadata file path to store information about indexed files
+    private static readonly string MetadataFilePath = Path.Combine(AppDataBasePath, "indexedFiles.json");
+
+    // Ensure the base path exists when the application starts
+    static LuceneIndexer()
     {
-        try
+        Directory.CreateDirectory(AppDataBasePath);
+    }
+
+    // Load metadata from the file to track indexed files
+    private static Dictionary<string, DateTime> LoadMetadata()
+    {
+        if (File.Exists(MetadataFilePath))
         {
-            // Ensure the index directory exists
-            Directory.CreateDirectory(IndexPath);
+            var json = File.ReadAllText(MetadataFilePath);
+            return JsonSerializer.Deserialize<Dictionary<string, DateTime>>(json) ?? [];
+        }
+        return [];
+    }
 
-            // Initialize the Lucene directory and analyzer
-            using var directory = FSDirectory.Open(IndexPath);
-            using var analyzer = new StandardAnalyzer(LuceneVersion.LUCENE_48);
-            var config = new IndexWriterConfig(LuceneVersion.LUCENE_48, analyzer)
+    // Save metadata to the file after updating
+    private static void SaveMetadata(Dictionary<string, DateTime> metadata)
+    {
+        var json = JsonSerializer.Serialize(metadata);
+
+        // Ensure the directory exists before saving
+        Directory.CreateDirectory(AppDataBasePath);
+        File.WriteAllText(MetadataFilePath, json);
+    }
+
+    // Generate a unique index folder name for each directory
+    private static string GetIndexFolderName(string folderPath)
+    {
+        using var sha256 = SHA256.Create();
+        var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(folderPath));
+        return BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
+    }
+
+    // Index files in a specific folder
+    public static void IndexDirectory(string folderPath)
+    {
+        if (!Directory.Exists(folderPath))
+            throw new DirectoryNotFoundException($"The folder '{folderPath}' does not exist.");
+
+        // Create an index folder based on the folder path within AppData
+        string uniqueIndexPath = Path.Combine(AppDataBasePath, GetIndexFolderName(folderPath));
+        Directory.CreateDirectory(uniqueIndexPath);
+
+        var metadata = LoadMetadata(); // Load existing metadata
+        var metadataLock = new object(); // Lock object for thread-safe updates
+
+        using var dir = FSDirectory.Open(uniqueIndexPath);
+        using var analyzer = new StandardAnalyzer(Lucene.Net.Util.LuceneVersion.LUCENE_48);
+        using var writer = new IndexWriter(dir, new IndexWriterConfig(Lucene.Net.Util.LuceneVersion.LUCENE_48, analyzer));
+
+        var pdfFiles = Directory.GetFiles(folderPath, "*.pdf", SearchOption.AllDirectories);
+
+        // Use a thread-safe collection to track updated metadata
+        var updatedMetadata = new ConcurrentDictionary<string, DateTime>();
+
+        // Process files in parallel
+        Parallel.ForEach(pdfFiles, pdfFile =>
+        {
+            var lastModified = File.GetLastWriteTimeUtc(pdfFile);
+
+            var relativePath = Path.GetRelativePath(folderPath, pdfFile).Replace(Path.DirectorySeparatorChar, '➜'); // Direct relative path calculation
+
+            // Skip indexing if the file has already been indexed and not modified
+            if (metadata.TryGetValue(pdfFile, out var indexedTime) && indexedTime >= lastModified)
             {
-                OpenMode = OpenMode.CREATE_OR_APPEND // Append to the existing index
-            };
+                Console.WriteLine($"Skipping already indexed file (no changes): {pdfFile}");
+                return;
+            }
 
-            // Initialize IndexWriter once outside the loop
-            using var writer = new IndexWriter(directory, config);
-
-            // Get all the PDF files in the directory and subdirectories
-            var pdfFiles = Directory.GetFiles(directoryPath, "*.pdf", SearchOption.AllDirectories);
-
-            // Lock object to synchronize the access to the index writing operations
-            var lockObject = new object();
-
-            // Parallel processing of PDF files
-            Parallel.ForEach(pdfFiles, pdfFilePath =>
+            try
             {
-                var lastModified = File.GetLastWriteTime(pdfFilePath);
-                try
+                // Extract text from PDF pages
+                var textByPage = PdfHelper.ExtractTextFromPdfPages(pdfFile);
+                foreach (var (page, text) in textByPage)
                 {
-                    // Ensure file is indexed if not already
-                    lock (lockObject)
+                    var doc = new Document
                     {
-                        // Use the IndexWriter to check if the file is already indexed
-                        using var reader = DirectoryReader.Open(writer, applyAllDeletes: false);
-                        var searcher = new IndexSearcher(reader);
+                        new StringField("FilePath", pdfFile, Field.Store.YES),
+                        new StringField("RelativePath", relativePath, Field.Store.YES),
+                        new Int32Field("PageNumber", page, Field.Store.YES),
+                        new TextField("Content", text, Field.Store.NO)
+                    };
 
-                        // Check if the file is indexed and if the index is up-to-date
-                        if (!IsFileIndexed(pdfFilePath, lastModified, searcher))
-                        {
-                            // Extract text from PDF file
-                            var textByPage = PdfHelper.ExtractTextFromPdf(pdfFilePath);
-
-                            // Add each page to the index
-                            foreach (var page in textByPage.Select(page => new Document
-                                     {
-                                         new StringField("FilePath", pdfFilePath, Field.Store.YES),
-                                         new StringField("LastModified", lastModified.ToString("o"),
-                                             Field.Store.YES), 
-                                         new Int32Field("PageNumber", page.Key, Field.Store.YES),
-                                         new TextField("Content", page.Value, Field.Store.YES)
-                                     }))
-                            {
-                                writer.AddDocument(page);
-                            }
-
-                            Console.WriteLine($@"Indexed file: {pdfFilePath}");
-                        }
-                        else
-                        {
-                            Console.WriteLine($@"Skipped already indexed file: {pdfFilePath}");
-                        }
+                    // Synchronize writer access
+                    lock (writer)
+                    {
+                        writer.AddDocument(doc);
                     }
                 }
-                catch (Exception ex)
+
+                // Update metadata in a thread-safe way
+                updatedMetadata[pdfFile] = lastModified;
+
+                // Debug message indicating successful indexing of the file
+                Console.WriteLine($"Successfully indexed file: {pdfFile}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error processing file '{pdfFile}': {ex.Message}");
+            }
+        });
+
+        writer.Flush(triggerMerge: false, applyAllDeletes: false);
+
+        // Update metadata after parallel processing
+        if (!updatedMetadata.IsEmpty)
+        {
+            lock (metadataLock)
+            {
+                foreach (var entry in updatedMetadata)
                 {
-                    Console.WriteLine($@"Error processing {pdfFilePath}: {ex.Message}");
+                    metadata[entry.Key] = entry.Value;
                 }
-            });
 
-            // Commit changes after all files are processed
-            writer.Commit();
-            Console.WriteLine($@"Indexing complete for directory: {directoryPath}");
+                SaveMetadata(metadata);
+                Console.WriteLine("Metadata updated.");
+            }
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($@"Error indexing directory {directoryPath}: {ex.Message}");
-        }
+
+        Console.WriteLine($"Indexing completed for directory: {folderPath}. Index stored at: {uniqueIndexPath}");
     }
 
-
-    /// <summary>
-    /// Cleans the Lucene index directory by deleting all files in it.
-    /// </summary>
-    public static void CleanIndexDirectory()
+    // Clean all existing indexes and metadata
+    public static void CleanAllIndexes()
     {
-        try
+        if (Directory.Exists(AppDataBasePath))
         {
-            // If the index directory exists, delete all files inside it
-            if (!Directory.Exists(IndexPath))
-            {
-                Console.WriteLine($@"Index directory does not exist: {IndexPath}");
-            }
-
-            foreach (var file in Directory.GetFiles(IndexPath))
-            {
-                File.Delete(file); // Delete each file in the index folder
-            }
-
-            Console.WriteLine($@"Index directory cleaned: {IndexPath}");
+            Directory.Delete(AppDataBasePath, recursive: true);
+            Console.WriteLine("All indexes have been cleaned.");
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($@"Error cleaning index directory: {ex.Message}");
-        }
-    }
-
-    /// <summary>
-    /// Checks if a file is already indexed and up-to-date in the Lucene index.
-    /// </summary>
-    /// <param name="filePath">The file path to check.</param>
-    /// <param name="lastModified">The last modified timestamp of the file.</param>
-    /// <param name="searcher">Lucene IndexSearcher to query the index.</param>
-    /// <returns>True if the file is already indexed and up-to-date; otherwise, false.</returns>
-    private static bool IsFileIndexed(string filePath, DateTime lastModified, IndexSearcher searcher)
-    {
-        var query = new TermQuery(new Term("FilePath", filePath));
-        var hits = searcher.Search(query, 1).ScoreDocs;
-
-        if (hits.Length == 0)
-            return false; // File is not indexed
-
-        var doc = searcher.Doc(hits[0].Doc);
-        var indexedLastModified = DateTime.Parse(doc.Get("LastModified"));
-
-        return indexedLastModified >= lastModified;
     }
 }

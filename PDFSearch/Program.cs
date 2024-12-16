@@ -1,16 +1,35 @@
 namespace PDFSearch;
 
-static class Program
+internal static class Program
 {
-    /// <summary>
-    ///  The main entry point for the application.
-    /// </summary>
     [STAThread]
-    static void Main()
+    private static void Main(string[] args)
     {
-        // To customize application configuration such as set high DPI settings or default font,
-        // see https://aka.ms/applicationconfiguration.
-        ApplicationConfiguration.Initialize();
-        Application.Run(new Search());
+        string folderPath;
+
+        if (args.Length > 0)
+        {
+            folderPath = args[0]; // Path from the context menu
+            //MessageBox.Show($"Opening location in Args: {folderPath}", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        else
+        {
+            folderPath = Environment.CurrentDirectory; // Default fallback
+            //MessageBox.Show($"Opening location in Default: {folderPath}", "Info", MessageBoxButtons.OK,                MessageBoxIcon.Information);
+        }
+
+        var path = folderPath.Trim();
+
+        if (Directory.Exists(path))
+        {
+            //MessageBox.Show($"Opening location in Directory: {folderPath}", "Checking location", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            Console.WriteLine($"Opening location: {folderPath}");
+            Application.Run(new Search(folderPath));
+        }
+        else
+        {
+            MessageBox.Show($"Invalid folder path: {folderPath}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 }
+
