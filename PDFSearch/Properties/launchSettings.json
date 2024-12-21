@@ -1,8 +1,7 @@
 {
   "profiles": {
     "PDFSearch": {
-      "commandName": "Project",
-      "workingDirectory": "E:\\Freelance Work\\Farohar\\Farohar E-Document Library_Sample"
+      "commandName": "Project"
     }
   }
 }
