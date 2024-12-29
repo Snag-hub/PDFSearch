@@ -1,5 +1,5 @@
 ## Todo: 
-1. Learn how to make setup with permissions and single path definer for default PDF Reader and How to make the license agreement to accept before installing etc.
-2. Trigger opening application on launch of those pdf which will be searchable using our system.
-3. Make it robust.
-4. Immersive Frontend.
+1. Tree view for sub directories.
+2. Make a service which will call path finder on every timespan We will figure it out.
+3. Way to select where to search in sub-directories or in the same opened file.
+

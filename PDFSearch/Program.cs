@@ -22,9 +22,11 @@ internal static class Program
 
         if (Directory.Exists(path))
         {
+
             //MessageBox.Show($"Opening location in Directory: {folderPath}", "Checking location", MessageBoxButtons.OK, MessageBoxIcon.Information);
             Console.WriteLine($"Opening location: {folderPath}");
-            Application.Run(new Search(folderPath));
+            Application.Run(new SearchInPDFs(folderPath));
+
         }
         else
         {

@@ -17,7 +17,7 @@ Global
 		{B6D52F5C-2345-4264-9548-7E21E20047D1}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B6D52F5C-2345-4264-9548-7E21E20047D1}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B6D52F5C-2345-4264-9548-7E21E20047D1}.Release|Any CPU.Build.0 = Release|Any CPU
-		{E260165B-20E7-4B75-93FE-C32661DDC5C5}.Debug|Any CPU.ActiveCfg = Debug
+		{E260165B-20E7-4B75-93FE-C32661DDC5C5}.Debug|Any CPU.ActiveCfg = Release
 		{E260165B-20E7-4B75-93FE-C32661DDC5C5}.Release|Any CPU.ActiveCfg = Release
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution

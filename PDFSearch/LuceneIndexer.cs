@@ -109,7 +109,7 @@ public static class LuceneIndexer
                         new StringField("FilePath", pdfFile, Field.Store.YES),
                         new StringField("RelativePath", relativePath, Field.Store.YES),
                         new Int32Field("PageNumber", page, Field.Store.YES),
-                        new TextField("Content", text, Field.Store.NO)
+                        new TextField("Content", text, Field.Store.YES)
                     };
 
                     // Synchronize writer access
