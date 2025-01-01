@@ -76,6 +76,8 @@ public partial class SearchInPDFs : Form
     {
         try
         {
+            //EnsureAcrobatClosed(); // Ensure that Acrobat is not running before launching
+
             // Check if Acrobat process is running
             var acrobatProcess = Process.GetProcessesByName("Acrobat").FirstOrDefault();
             string indexFilePath = Path.Combine(_launchDirectory, "Index.pdf");
@@ -200,6 +202,61 @@ public partial class SearchInPDFs : Form
             MessageBox.Show($"Error arranging windows: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
+    #region Unused Code for Search Event
+    //private void BtnSearchText_Click(object sender, EventArgs e)
+    //{
+    //    string? filePath = _pdfPathBackgroundService.FilePath;
+    //    filePath = RemoveFileName(filePath);
+
+    //    if (!string.IsNullOrEmpty(filePath))
+    //    {
+    //        MessageBox.Show($"Current active PDF file path: {filePath}");
+    //    }
+    //    else
+    //    {
+    //        MessageBox.Show("No active PDF file found.");
+    //    }
+
+    //    try
+    //    {
+    //        // Clear previous results in the TreeView
+    //        treeVwResult.Nodes.Clear();
+
+    //        string searchTerm = txtSearchBox.Text.Trim();
+    //        if (string.IsNullOrEmpty(searchTerm))
+    //        {
+    //            MessageBox.Show("Please enter a search term.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+    //            return;
+    //        }
+
+    //        // Search the results using Lucene or any other search mechanism
+    //        var results = LuceneSearcher.SearchInDirectory(searchTerm, _launchDirectory, filePath);
+
+    //        if (results.Count > 0)
+    //        {
+    //            foreach (var result in results)
+    //            {
+    //                // Create the root node for each search result (just the snippet)
+    //                TreeNode rootNode = new($"{result.Snippet} - FilePath: {result.RelativePath}")
+    //                {
+    //                    Tag = result  // Store the full result object in Tag property for reference
+    //                };
+
+    //                // Add the root node to the TreeView
+    //                treeVwResult.Nodes.Add(rootNode);
+    //            }
+    //        }
+    //        else
+    //        {
+    //            MessageBox.Show("No results found.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    //        }
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+    //    }
+    //}
+    #endregion
 
     private void BtnSearchText_Click(object sender, EventArgs e)
     {
@@ -232,17 +289,37 @@ public partial class SearchInPDFs : Form
 
             if (results.Count > 0)
             {
-                foreach (var result in results)
+                // Group results by directory
+                var groupedResults = results
+                    .GroupBy(r => Path.GetDirectoryName(r.FilePath))
+                    .OrderBy(g => g.Key); // Sort by directory name
+
+                foreach (var group in groupedResults)
                 {
-                    // Create the root node for each search result (just the snippet)
-                    TreeNode rootNode = new($"{result.Snippet} - FilePath: {result.RelativePath}")
+                    // Abbreviate the directory path
+                    string abbreviatedPath = AbbreviateDirectoryPath(group.Key);
+
+                    // Create a directory-level node with the abbreviated path
+                    var directoryNode = new TreeNode(abbreviatedPath)
                     {
-                        Tag = result  // Store the full result object in Tag property for reference
+                        Tag = group.Key // Store full directory path for reference
                     };
 
-                    // Add the root node to the TreeView
-                    treeVwResult.Nodes.Add(rootNode);
+                    // Add file nodes under the directory node
+                    foreach (var result in group)
+                    {
+                        var fileNode = new TreeNode(Path.GetFileName(result.FilePath))
+                        {
+                            Tag = result // Store the full SearchResult object for reference
+                        };
+                        directoryNode.Nodes.Add(fileNode);
+                    }
+
+                    // Add the directory node to the TreeView
+                    treeVwResult.Nodes.Add(directoryNode);
                 }
+                // Expand All Node if needed
+                //treeVwResult.ExpandAll();
             }
             else
             {
@@ -254,6 +331,25 @@ public partial class SearchInPDFs : Form
             MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
+
+    private string AbbreviateDirectoryPath(string fullPath, int maxLength = 50)
+    {
+        if (string.IsNullOrEmpty(fullPath) || fullPath.Length <= maxLength)
+            return fullPath;
+
+        string root = Path.GetPathRoot(fullPath);
+        string leaf = Path.GetFileName(fullPath.TrimEnd(Path.DirectorySeparatorChar));
+        string middle = "...";
+
+        int remainingLength = maxLength - root.Length - leaf.Length - middle.Length;
+
+        if (remainingLength <= 0)
+            return $"{root}{middle}{Path.DirectorySeparatorChar}{leaf}";
+
+        string middlePart = fullPath.Substring(root.Length, remainingLength);
+        return $"{root}{middle}{middlePart}{Path.DirectorySeparatorChar}{leaf}";
+    }
+
 
     private void lstVwResult_DrawItem(object sender, DrawListViewItemEventArgs e)
     {
@@ -315,31 +411,73 @@ public partial class SearchInPDFs : Form
         e.Handled = true;
     }
 
+    #region This is unused code for treeNode double click
+    //private void treeVwResult_NodeMouseDoubleClick(object sender, TreeNodeMouseClickEventArgs e)
+    //{
+    //    try
+    //    {
+    //        // Ensure a node is selected
+    //        var selectedNode = e.Node;
+    //        if (selectedNode != null)
+    //        {
+    //            // Retrieve the SearchResult (or equivalent object) stored in the Tag property
+    //            if (selectedNode.Tag is SearchResult selectedResult)
+    //            {
+    //                var filePath = selectedResult.FilePath;
+    //                var pageNumber = selectedResult.PageNumber;
+
+    //                // Open the PDF at the specific page (or implement your own logic)
+    //                PdfOpener.OpenPdfAtPage(filePath, pageNumber);
+    //            }
+    //            else
+    //            {
+    //                MessageBox.Show(@"Invalid search result.", @"Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+    //            }
+    //        }
+    //        else
+    //        {
+    //            MessageBox.Show(@"Please select a valid search result.", @"No Selection", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+    //        }
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        MessageBox.Show($@"Error: {ex.Message}", @"Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+    //    }
+    //}
+    #endregion
+
     private void treeVwResult_NodeMouseDoubleClick(object sender, TreeNodeMouseClickEventArgs e)
     {
         try
         {
             // Ensure a node is selected
             var selectedNode = e.Node;
-            if (selectedNode != null)
+            if (selectedNode == null)
             {
-                // Retrieve the SearchResult (or equivalent object) stored in the Tag property
-                if (selectedNode.Tag is SearchResult selectedResult)
-                {
-                    var filePath = selectedResult.FilePath;
-                    var pageNumber = selectedResult.PageNumber;
+                MessageBox.Show(@"Please select a valid node.", @"No Selection", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
 
-                    // Open the PDF at the specific page (or implement your own logic)
-                    PdfOpener.OpenPdfAtPage(filePath, pageNumber);
-                }
-                else
-                {
-                    MessageBox.Show(@"Invalid search result.", @"Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                }
+            // Check if the node represents a search result or a directory
+            if (selectedNode.Tag is SearchResult selectedResult)
+            {
+                // This is a file node
+                var filePath = selectedResult.FilePath;
+                var pageNumber = selectedResult.PageNumber;
+
+                // Open the PDF at the specific page
+                PdfOpener.OpenPdfAtPage(filePath, pageNumber);
+            }
+            else if (selectedNode.Tag is string directoryPath)
+            {
+                // This is a directory node
+                MessageBox.Show($"Selected directory: {directoryPath}", @"Directory Selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                // Optionally open the directory in file explorer
+                System.Diagnostics.Process.Start("explorer.exe", directoryPath);
             }
             else
             {
-                MessageBox.Show(@"Please select a valid search result.", @"No Selection", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(@"Invalid node selected.", @"Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
         catch (Exception ex)
@@ -347,6 +485,7 @@ public partial class SearchInPDFs : Form
             MessageBox.Show($@"Error: {ex.Message}", @"Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
+
 
     private void treeVwResult_DrawNode(object sender, DrawTreeNodeEventArgs e)
     {
