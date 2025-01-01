@@ -491,7 +491,7 @@ public partial class SearchInPDFs : Form
     {
         // Set the default font and brush
         Font regularFont = e.Node.TreeView.Font;
-        Font boldFont = new Font(e.Node.TreeView.Font, FontStyle.Bold);
+        Font boldFont = new(e.Node.TreeView.Font, FontStyle.Bold);
 
         // Check if the current node is selected (using the selected node from TreeView)
         bool isSelected = e.Node == e.Node.TreeView.SelectedNode;
@@ -514,7 +514,7 @@ public partial class SearchInPDFs : Form
         float y = e.Bounds.Top;
 
         // Split text by <b> and </b> tags
-        string[] parts = text.Split(new[] { "<b>", "</b>" }, StringSplitOptions.None);
+        string[] parts = text.Split(["<b>", "</b>"], StringSplitOptions.None);
         bool isBold = false;
 
         // Draw each part of the text
