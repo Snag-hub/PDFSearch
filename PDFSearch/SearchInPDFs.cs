@@ -63,8 +63,8 @@ public partial class SearchInPDFs : Form
         // start filePath retriving service
         _pdfPathBackgroundService.Start();
 
-        treeVwResult.DrawMode = TreeViewDrawMode.OwnerDrawText;
-        treeVwResult.DrawNode += treeVwResult_DrawNode;
+        treeVwResult.DrawMode = TreeViewDrawMode.Normal;
+        //treeVwResult.DrawNode += treeVwResult_DrawNode;
         Thread.Sleep(1000); // Wait for Acrobat to initialize
         ArrangeWindows();
     }
@@ -296,13 +296,15 @@ public partial class SearchInPDFs : Form
 
                 foreach (var group in groupedResults)
                 {
-                    // Abbreviate the directory path
-                    string abbreviatedPath = AbbreviateDirectoryPath(group.Key);
+                    string fullDirectoryPath = group.Key;
+
+                    // Apply abbreviation to the directory path
+                    string abbreviatedPath = AbbreviateDirectoryPath(fullDirectoryPath);
 
                     // Create a directory-level node with the abbreviated path
                     var directoryNode = new TreeNode(abbreviatedPath)
                     {
-                        Tag = group.Key // Store full directory path for reference
+                        Tag = fullDirectoryPath // Store the full directory path for reference
                     };
 
                     // Add file nodes under the directory node
@@ -318,8 +320,8 @@ public partial class SearchInPDFs : Form
                     // Add the directory node to the TreeView
                     treeVwResult.Nodes.Add(directoryNode);
                 }
-                // Expand All Node if needed
-                //treeVwResult.ExpandAll();
+
+                treeVwResult.CollapseAll(); // Ensure all nodes are collapsed by default
             }
             else
             {
@@ -337,19 +339,23 @@ public partial class SearchInPDFs : Form
         if (string.IsNullOrEmpty(fullPath) || fullPath.Length <= maxLength)
             return fullPath;
 
-        string root = Path.GetPathRoot(fullPath);
-        string leaf = Path.GetFileName(fullPath.TrimEnd(Path.DirectorySeparatorChar));
-        string middle = "...";
+        string root = Path.GetPathRoot(fullPath); // E.g., "E:\"
+        string[] directories = fullPath.Substring(root.Length).Split(Path.DirectorySeparatorChar);
 
-        int remainingLength = maxLength - root.Length - leaf.Length - middle.Length;
+        // Handle edge cases where there's no middle section
+        if (directories.Length <= 2)
+            return fullPath;
+
+        string middle = "...";
+        string leaf = directories[^1]; // Last directory name or file name
+        int remainingLength = maxLength - root.Length - leaf.Length - middle.Length - 2; // -2 for separator chars
 
         if (remainingLength <= 0)
             return $"{root}{middle}{Path.DirectorySeparatorChar}{leaf}";
 
-        string middlePart = fullPath.Substring(root.Length, remainingLength);
-        return $"{root}{middle}{middlePart}{Path.DirectorySeparatorChar}{leaf}";
+        string middlePart = string.Join(Path.DirectorySeparatorChar.ToString(), directories.TakeWhile(d => d.Length <= remainingLength));
+        return $"{root}{middle}{Path.DirectorySeparatorChar}{middlePart}{Path.DirectorySeparatorChar}{leaf}";
     }
-
 
     private void lstVwResult_DrawItem(object sender, DrawListViewItemEventArgs e)
     {
@@ -375,7 +381,7 @@ public partial class SearchInPDFs : Form
         float y = e.Bounds.Top;
 
         // Split text by <b> and </b> tags
-        string[] parts = text.Split(new[] { "<b>", "</b>" }, StringSplitOptions.None);
+        string[] parts = text.Split(["<b>", "</b>"], StringSplitOptions.None);
         bool isBold = false;
 
         // Draw each part
@@ -491,7 +497,7 @@ public partial class SearchInPDFs : Form
     {
         // Set the default font and brush
         Font regularFont = e.Node.TreeView.Font;
-        Font boldFont = new Font(e.Node.TreeView.Font, FontStyle.Bold);
+        Font boldFont = new(e.Node.TreeView.Font, FontStyle.Bold);
 
         // Check if the current node is selected (using the selected node from TreeView)
         bool isSelected = e.Node == e.Node.TreeView.SelectedNode;
@@ -514,7 +520,7 @@ public partial class SearchInPDFs : Form
         float y = e.Bounds.Top;
 
         // Split text by <b> and </b> tags
-        string[] parts = text.Split(new[] { "<b>", "</b>" }, StringSplitOptions.None);
+        string[] parts = text.Split(["<b>", "</b>"], StringSplitOptions.None);
         bool isBold = false;
 
         // Draw each part of the text
@@ -612,5 +618,4 @@ public partial class SearchInPDFs : Form
             }
         }
     }
-
 }
