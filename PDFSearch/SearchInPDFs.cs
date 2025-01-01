@@ -63,8 +63,8 @@ public partial class SearchInPDFs : Form
         // start filePath retriving service
         _pdfPathBackgroundService.Start();
 
-        treeVwResult.DrawMode = TreeViewDrawMode.Normal;
-        //treeVwResult.DrawNode += treeVwResult_DrawNode;
+        treeVwResult.DrawMode = TreeViewDrawMode.OwnerDrawText;
+        treeVwResult.DrawNode += treeVwResult_DrawNode;
         Thread.Sleep(1000); // Wait for Acrobat to initialize
         ArrangeWindows();
     }
@@ -307,13 +307,36 @@ public partial class SearchInPDFs : Form
                         Tag = fullDirectoryPath // Store the full directory path for reference
                     };
 
-                    // Add file nodes under the directory node
-                    foreach (var result in group)
+                    // Further group results by file path within the directory
+                    var fileGroups = group
+                        .GroupBy(r => r.FilePath)
+                        .OrderBy(g => g.Key); // Sort by file name
+
+                    foreach (var fileGroup in fileGroups)
                     {
-                        var fileNode = new TreeNode(Path.GetFileName(result.FilePath))
+                        string fileName = Path.GetFileName(fileGroup.Key);
+
+                        // Create the file node
+                        var fileNode = new TreeNode(fileName)
                         {
-                            Tag = result // Store the full SearchResult object for reference
+                            Tag = fileGroup.Key // Store the full file path for reference
                         };
+
+                        // Add snippet and page number nodes for each result in the file group
+                        foreach (var result in fileGroup)
+                        {
+                            string snippetText = result.Snippet ?? "No snippet available";
+                            string pageText = result.PageNumber > 0 ? $"Page {result.PageNumber}" : "Page number not found";
+
+                            var snippetNode = new TreeNode($"{pageText}: {snippetText}")
+                            {
+                                Tag = result // Optionally associate the SearchResult object here
+                            };
+
+                            fileNode.Nodes.Add(snippetNode);
+                        }
+
+                        // Add the file node to the directory node
                         directoryNode.Nodes.Add(fileNode);
                     }
 
@@ -474,13 +497,14 @@ public partial class SearchInPDFs : Form
                 // Open the PDF at the specific page
                 PdfOpener.OpenPdfAtPage(filePath, pageNumber);
             }
-            else if (selectedNode.Tag is string directoryPath)
-            {
-                // This is a directory node
-                MessageBox.Show($"Selected directory: {directoryPath}", @"Directory Selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                // Optionally open the directory in file explorer
-                System.Diagnostics.Process.Start("explorer.exe", directoryPath);
-            }
+            // commented because not not needed in production
+            //else if (selectedNode.Tag is string directoryPath)
+            //{
+            //    // This is a directory node
+            //    MessageBox.Show($"Selected directory: {directoryPath}", @"Directory Selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            //    // Optionally open the directory in file explorer
+            //    System.Diagnostics.Process.Start("explorer.exe", directoryPath);
+            //}
             else
             {
                 MessageBox.Show(@"Invalid node selected.", @"Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
