@@ -1,20 +1,40 @@
 ﻿using Microsoft.Extensions.Logging;
 using System;
+using System.Threading;
 using Timer = System.Threading.Timer;
 
 namespace PDFSearch.BackgroundPathFinder;
 
+// Interface for Acrobat Service
+public interface IAcrobatService
+{
+    dynamic? GetActiveDocument();
+}
+
+// Implementation of the Acrobat Service
+public class AcrobatService : IAcrobatService
+{
+    public dynamic? GetActiveDocument()
+    {
+        // Create Acrobat application object
+        var acroApp = Activator.CreateInstance(Type.GetTypeFromProgID("AcroExch.App")) as dynamic;
+        return acroApp?.GetActiveDoc();
+    }
+}
+
 public class PdfPathBackgroundService
 {
     private readonly ILogger<PdfPathBackgroundService> _logger;
+    private readonly IAcrobatService _acrobatService;
     private string? _filePath;
     private Timer? _timer;
 
     public string? FilePath => _filePath; // Property to get the file path
 
-    public PdfPathBackgroundService(ILogger<PdfPathBackgroundService> logger)
+    public PdfPathBackgroundService(ILogger<PdfPathBackgroundService> logger, IAcrobatService acrobatService)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _acrobatService = acrobatService ?? throw new ArgumentNullException(nameof(acrobatService));
     }
 
     // Start the Timer
@@ -31,20 +51,10 @@ public class PdfPathBackgroundService
     {
         try
         {
-            // Retrieve the active PDF file path
             _logger.LogInformation("Retrieving active PDF file path.");
 
-            // Initialize Acrobat application object
-            var acroApp = Activator.CreateInstance(Type.GetTypeFromProgID("AcroExch.App")) as dynamic;
-
-            if (acroApp == null)
-            {
-                _logger.LogError("Failed to create Acrobat application object.");
-                return;
-            }
-
             // Get the active document (AVDoc)
-            var avDoc = acroApp.GetActiveDoc();
+            var avDoc = _acrobatService.GetActiveDocument();
             if (avDoc == null)
             {
                 _logger.LogWarning("No active document found.");
@@ -92,5 +102,6 @@ public class PdfPathBackgroundService
     public void Stop()
     {
         _timer?.Dispose();
+        _logger.LogInformation("PdfPathBackgroundService has stopped.");
     }
 }

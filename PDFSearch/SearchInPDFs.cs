@@ -7,6 +7,7 @@ using System.Windows.Forms;
 using System.Threading;
 using PDFSearch.BackgroundPathFinder;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 namespace PDFSearch;
 
@@ -46,8 +47,11 @@ public partial class SearchInPDFs : Form
             builder.AddConsole();
         }).CreateLogger<PdfPathBackgroundService>();
 
+        // Initialize the IAcrobatService
+        IAcrobatService acrobatService = new AcrobatService(); // Use your actual service
+
         // Initialize the PdfPathBackgroundService
-        _pdfPathBackgroundService = new PdfPathBackgroundService(logger);
+        _pdfPathBackgroundService = new PdfPathBackgroundService(logger, acrobatService);
 
         // Add form load event handler
         this.Load += SearchInPDFs_Load;
@@ -68,33 +72,103 @@ public partial class SearchInPDFs : Form
     // EnumWindows callback
     public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
-    private void FindAcrobatWindow()
+    private void FindOrLaunchAcrobatWindow()
     {
-        EnumWindows((hWnd, lParam) =>
+        try
         {
-            StringBuilder windowText = new StringBuilder(256);
-            GetWindowText(hWnd, windowText, windowText.Capacity);
+            // Check if Acrobat process is running
+            var acrobatProcess = Process.GetProcessesByName("Acrobat").FirstOrDefault();
+            string indexFilePath = Path.Combine(_launchDirectory, "Index.pdf");
 
-            // Print out the window title to the console or debug output to see what it's named
-            Console.WriteLine("Window Title: " + windowText.ToString());
-
-            // Search for any Acrobat window by partial title
-            if (windowText.ToString().Contains("Adobe Acrobat") || windowText.ToString().Contains("Acrobat"))
+            if (acrobatProcess == null)
             {
-                // Set acrobat window to the found handle
-                acrobatHandle = hWnd;
-                return false; // Stop further enumeration once we find it
+                // Acrobat is not running, attempt to start it
+                string acrobatPath = @"C:\Program Files (x86)\Adobe\Acrobat Reader\AcroRd32.exe"; // Adjust path if needed
+
+                if (File.Exists(acrobatPath))
+                {
+                    if (File.Exists(indexFilePath))
+                    {
+                        Process.Start(acrobatPath, $"\"{indexFilePath}\""); // Pass the file path as an argument
+                        Thread.Sleep(5000); // Wait for Acrobat to initialize
+                    }
+                    else
+                    {
+                        MessageBox.Show($"Index.pdf not found in the directory: {_launchDirectory}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+                }
+                else
+                {
+                    MessageBox.Show("Adobe Acrobat not found at the expected location.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+            }
+            else
+            {
+                // Ensure that Acrobat opens Index.pdf even if it's already running
+                if (File.Exists(indexFilePath))
+                {
+                    try
+                    {
+                        string acrobatPath = @"C:\Program Files\Adobe\Acrobat DC\Acrobat\Acrobat.exe"; // Adjust path if needed
+
+                        if (File.Exists(acrobatPath))
+                        {
+                            // Use ProcessStartInfo to launch Adobe Acrobat with the file
+                            var startInfo = new ProcessStartInfo
+                            {
+                                FileName = acrobatPath,
+                                Arguments = $"\"{indexFilePath}\"", // Pass the PDF file as an argument
+                                UseShellExecute = false // Do not use shell execute
+                            };
+
+                            Process.Start(startInfo);
+                        }
+                        else
+                        {
+                            MessageBox.Show("Adobe Acrobat executable not found at the specified path.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"Error opening Index.pdf with Acrobat: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                }
+                else
+                {
+                    MessageBox.Show($"Index.pdf not found in the directory: {_launchDirectory}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
             }
 
-            return true; // Continue searching other windows
-        }, IntPtr.Zero);
+
+
+            // Find the Acrobat window
+            EnumWindows((hWnd, lParam) =>
+            {
+                StringBuilder windowText = new StringBuilder(256);
+                GetWindowText(hWnd, windowText, windowText.Capacity);
+
+                if (windowText.ToString().Contains("Adobe Acrobat") || windowText.ToString().Contains("Acrobat"))
+                {
+                    acrobatHandle = hWnd;
+                    return false; // Stop further enumeration
+                }
+
+                return true;
+            }, IntPtr.Zero);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error finding or launching Acrobat: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 
     private void ArrangeWindows()
     {
         try
         {
-            FindAcrobatWindow();  // This method will now set the acrobatHandle
+            FindOrLaunchAcrobatWindow();  // This method will now set the acrobatHandle
 
             if (acrobatHandle != IntPtr.Zero)
             {
@@ -130,6 +204,7 @@ public partial class SearchInPDFs : Form
     private void BtnSearchText_Click(object sender, EventArgs e)
     {
         string? filePath = _pdfPathBackgroundService.FilePath;
+        filePath = RemoveFileName(filePath);
 
         if (!string.IsNullOrEmpty(filePath))
         {
@@ -365,5 +440,20 @@ public partial class SearchInPDFs : Form
     private void SearchInPDFs_FormClosing(object sender, FormClosingEventArgs e)
     {
         _pdfPathBackgroundService.Stop();
+    }
+
+    public static string RemoveFileName(string fullPath)
+    {
+        string path = string.Empty;
+        if (!string.IsNullOrEmpty(fullPath))
+        {
+            path = Path.GetDirectoryName(fullPath);
+            if (path != null && path.StartsWith("\\"))
+            {
+                string driveLetter = fullPath.Substring(0, fullPath.IndexOf(':') + 1);
+                path = path.Substring(1).Insert(1, driveLetter + ":");
+            }
+        }
+        return path;
     }
 }

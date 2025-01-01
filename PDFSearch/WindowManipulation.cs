@@ -34,7 +34,7 @@ public class PdfOpener
             if (existingProcesses.Length > 0)
             {
                 // Acrobat Pro is already running, reuse the existing instance
-                acrobatHandle = existingProcesses[0].MainWindowHandle;
+                acrobatHandle = existingProcesses[1].MainWindowHandle;
 
                 // Open the specified file and page in the already running instance
                 Process.Start(adobeReaderPath, arguments);
@@ -61,40 +61,40 @@ public class PdfOpener
                 return;
             }
 
-            // Proceed with window manipulation if a valid handle is found
-            if (acrobatHandle != IntPtr.Zero)
-            {
-                // Get the current form's size and position
-                var form = Application.OpenForms.Count > 0 ? Application.OpenForms[0] : null;
+            //// Proceed with window manipulation if a valid handle is found
+            //if (acrobatHandle != IntPtr.Zero)
+            //{
+            //    // Get the current form's size and position
+            //    var form = Application.OpenForms.Count > 0 ? Application.OpenForms[0] : null;
 
-                if (form != null)
-                {
-                    int formWidth = form.Width;
-                    int formHeight = form.Height;
-                    int formLeft = form.Left;
-                    int formTop = form.Top;
+            //    if (form != null)
+            //    {
+            //        int formWidth = form.Width;
+            //        int formHeight = form.Height;
+            //        int formLeft = form.Left;
+            //        int formTop = form.Top;
 
-                    // Set Acrobat's size and position
-                    int acrobatWidth = 800;  // Adjust as needed
-                    int acrobatHeight = formHeight;  // Match the height of the form
-                    int acrobatLeft = formLeft + formWidth;  // Place it next to the form
-                    int acrobatTop = formTop;
+            //        // Set Acrobat's size and position
+            //        int acrobatWidth = 800;  // Adjust as needed
+            //        int acrobatHeight = formHeight;  // Match the height of the form
+            //        int acrobatLeft = formLeft + formWidth;  // Place it next to the form
+            //        int acrobatTop = formTop;
 
-                    // Move Acrobat window to position beside the form
-                    WindowManipulation.SetWindowPos(
-                        acrobatHandle,
-                        IntPtr.Zero,
-                        acrobatLeft,
-                        acrobatTop,
-                        acrobatWidth,
-                        acrobatHeight,
-                        WindowManipulation.SWP_NOZORDER | WindowManipulation.SWP_NOACTIVATE);
-                }
-            }
-            else
-            {
-                MessageBox.Show("Unable to find Acrobat window.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+            //        // Move Acrobat window to position beside the form
+            //        WindowManipulation.SetWindowPos(
+            //            acrobatHandle,
+            //            IntPtr.Zero,
+            //            acrobatLeft,
+            //            acrobatTop,
+            //            acrobatWidth,
+            //            acrobatHeight,
+            //            WindowManipulation.SWP_NOZORDER | WindowManipulation.SWP_NOACTIVATE);
+            //    }
+            //}
+            //else
+            //{
+            //    MessageBox.Show("Unable to find Acrobat window.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            //}
         }
         catch (Exception ex)
         {
