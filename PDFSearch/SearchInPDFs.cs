@@ -83,7 +83,7 @@ public partial class SearchInPDFs : Form
             if (acrobatProcess == null)
             {
                 // Acrobat is not running, attempt to start it
-                string acrobatPath = @"C:\Program Files (x86)\Adobe\Acrobat Reader\AcroRd32.exe"; // Adjust path if needed
+                string acrobatPath = @"C:\Program Files\Adobe\Acrobat DC\Acrobat\Acrobat.exe"; // Adjust path if needed
 
                 if (File.Exists(acrobatPath))
                 {
@@ -440,6 +440,7 @@ public partial class SearchInPDFs : Form
     private void SearchInPDFs_FormClosing(object sender, FormClosingEventArgs e)
     {
         _pdfPathBackgroundService.Stop();
+        EnsureAcrobatClosed();
     }
 
     public static string RemoveFileName(string fullPath)
@@ -456,4 +457,21 @@ public partial class SearchInPDFs : Form
         }
         return path;
     }
+
+    private void EnsureAcrobatClosed()
+    {
+        foreach (var process in Process.GetProcessesByName("Acrobat"))
+        {
+            try
+            {
+                process.Kill();
+                process.WaitForExit();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error closing Acrobat process: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+    }
+
 }
