@@ -375,7 +375,7 @@ public partial class SearchInPDFs : Form
         float y = e.Bounds.Top;
 
         // Split text by <b> and </b> tags
-        string[] parts = text.Split(new[] { "<b>", "</b>" }, StringSplitOptions.None);
+        string[] parts = text.Split(["<b>", "</b>"], StringSplitOptions.None);
         bool isBold = false;
 
         // Draw each part
