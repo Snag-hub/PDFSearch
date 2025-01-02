@@ -39,9 +39,9 @@ public static class LuceneIndexer
         if (File.Exists(MetadataFilePath))
         {
             var json = File.ReadAllText(MetadataFilePath);
-            return JsonSerializer.Deserialize<Dictionary<string, DateTime>>(json) ?? [];
+            return JsonSerializer.Deserialize<Dictionary<string, DateTime>>(json) ?? new Dictionary<string, DateTime>();
         }
-        return [];
+        return new Dictionary<string, DateTime>();
     }
 
     // Save metadata to the file after updating
@@ -72,58 +72,52 @@ public static class LuceneIndexer
         string uniqueIndexPath = Path.Combine(AppDataBasePath, GetIndexFolderName(folderPath));
         Directory.CreateDirectory(uniqueIndexPath);
 
-        var metadata = LoadMetadata(); // Load existing metadata
-        var metadataLock = new object(); // Lock object for thread-safe updates
+        var metadata = LoadMetadata();
+        var updatedMetadata = new ConcurrentDictionary<string, DateTime>();
 
         using var dir = FSDirectory.Open(uniqueIndexPath);
         using var analyzer = new StandardAnalyzer(Lucene.Net.Util.LuceneVersion.LUCENE_48);
-        using var writer = new IndexWriter(dir, new IndexWriterConfig(Lucene.Net.Util.LuceneVersion.LUCENE_48, analyzer));
+        var config = new IndexWriterConfig(Lucene.Net.Util.LuceneVersion.LUCENE_48, analyzer)
+        {
+            OpenMode = OpenMode.CREATE_OR_APPEND
+        };
 
+        using var writer = new IndexWriter(dir, config);
         var pdfFiles = Directory.GetFiles(folderPath, "*.pdf", SearchOption.AllDirectories);
-
-        // Use a thread-safe collection to track updated metadata
-        var updatedMetadata = new ConcurrentDictionary<string, DateTime>();
 
         // Process files in parallel
         Parallel.ForEach(pdfFiles, pdfFile =>
         {
-            var lastModified = File.GetLastWriteTimeUtc(pdfFile);
-
-            var relativePath = Path.GetRelativePath(folderPath, pdfFile).Replace(Path.DirectorySeparatorChar, '➜'); // Direct relative path calculation
-
-            // Skip indexing if the file has already been indexed and not modified
-            if (metadata.TryGetValue(pdfFile, out var indexedTime) && indexedTime >= lastModified)
-            {
-                Console.WriteLine($"Skipping already indexed file (no changes): {pdfFile}");
-                return;
-            }
-
             try
             {
-                // Extract text from PDF pages
+                var lastModified = File.GetLastWriteTimeUtc(pdfFile);
+                if (metadata.TryGetValue(pdfFile, out var indexedTime) && indexedTime >= lastModified)
+                {
+                    Console.WriteLine($"Skipping already indexed file (no changes): {pdfFile}");
+                    return;
+                }
+
                 var textByPage = PdfHelper.ExtractTextFromPdfPages(pdfFile);
+
+                // Batch Lucene documents
+                var docs = new List<Document>();
                 foreach (var (page, text) in textByPage)
                 {
                     var doc = new Document
                     {
                         new StringField("FilePath", pdfFile, Field.Store.YES),
-                        new StringField("RelativePath", relativePath, Field.Store.YES),
                         new Int32Field("PageNumber", page, Field.Store.YES),
                         new TextField("Content", text, Field.Store.YES)
                     };
-
-                    // Synchronize writer access
-                    lock (writer)
-                    {
-                        writer.AddDocument(doc);
-                    }
+                    docs.Add(doc);
                 }
 
-                // Update metadata in a thread-safe way
-                updatedMetadata[pdfFile] = lastModified;
+                lock (writer) // Synchronize access to the index writer
+                {
+                    writer.AddDocuments(docs);
+                }
 
-                // Debug message indicating successful indexing of the file
-                Console.WriteLine($"Successfully indexed file: {pdfFile}");
+                updatedMetadata[pdfFile] = lastModified;
             }
             catch (Exception ex)
             {
@@ -133,19 +127,16 @@ public static class LuceneIndexer
 
         writer.Flush(triggerMerge: false, applyAllDeletes: false);
 
-        // Update metadata after parallel processing
-        if (!updatedMetadata.IsEmpty)
+        // Update metadata after processing
+        lock (metadata)
         {
-            lock (metadataLock)
+            foreach (var entry in updatedMetadata)
             {
-                foreach (var entry in updatedMetadata)
-                {
-                    metadata[entry.Key] = entry.Value;
-                }
-
-                SaveMetadata(metadata);
-                Console.WriteLine("Metadata updated.");
+                metadata[entry.Key] = entry.Value;
             }
+
+            SaveMetadata(metadata);
+            Console.WriteLine("Metadata updated.");
         }
 
         Console.WriteLine($"Indexing completed for directory: {folderPath}. Index stored at: {uniqueIndexPath}");
