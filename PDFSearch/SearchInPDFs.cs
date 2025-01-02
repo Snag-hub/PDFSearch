@@ -41,6 +41,10 @@ public partial class SearchInPDFs : Form
         _launchDirectory = launchDirectory;
         InitializeComponent();
 
+        // Add event handlers for TreeView redrawing after expand/collapse
+        treeVwResult.AfterExpand += (s, e) => treeVwResult.Invalidate();
+        treeVwResult.AfterCollapse += (s, e) => treeVwResult.Invalidate();
+
         // Initialize the logger (you can configure it as per your requirements)
         ILogger<PdfPathBackgroundService> logger = LoggerFactory.Create(builder =>
         {
@@ -519,66 +523,56 @@ public partial class SearchInPDFs : Form
 
     private void treeVwResult_DrawNode(object sender, DrawTreeNodeEventArgs e)
     {
+        // Skip background drawing if bounds are invalid (can happen during expand/collapse)
+        if (e.Bounds.IsEmpty) return;
+
         // Set the default font and brush
         Font regularFont = e.Node.TreeView.Font;
         Font boldFont = new(e.Node.TreeView.Font, FontStyle.Bold);
 
-        // Check if the current node is selected (using the selected node from TreeView)
+        // Check if the current node is selected
         bool isSelected = e.Node == e.Node.TreeView.SelectedNode;
 
         // Set the background color based on selection
-        if (isSelected)
-        {
-            e.Graphics.FillRectangle(Brushes.LightBlue, e.Bounds); // Selected node background
-        }
-        else
-        {
-            e.Graphics.FillRectangle(Brushes.White, e.Bounds); // Default background for non-selected nodes
-        }
+        Brush backgroundBrush = isSelected ? Brushes.LightBlue : Brushes.White;
+        e.Graphics.FillRectangle(backgroundBrush, e.Bounds);
 
-        // Get the node text
+        // Draw the node text
         string text = e.Node.Text;
 
         // Variables for drawing
-        float x = e.Bounds.Left;
-        float y = e.Bounds.Top;
+        float x = e.Bounds.Left + 5; // Add a small margin for text
+        float y = e.Bounds.Top + (e.Bounds.Height - e.Node.TreeView.Font.Height) / 2; // Vertically center text
 
         // Split text by <b> and </b> tags
-        string[] parts = text.Split(["<b>", "</b>"], StringSplitOptions.None);
+        string[] parts = text.Split(new[] { "<b>", "</b>" }, StringSplitOptions.None);
         bool isBold = false;
 
-        // Draw each part of the text
         foreach (string part in parts)
         {
-            // Choose font based on whether the part is bold
             Font currentFont = isBold ? boldFont : regularFont;
 
-            // Measure the size of the text to calculate the next drawing position
+            // Measure text size
             SizeF textSize = e.Graphics.MeasureString(part, currentFont);
 
-            // Draw the text with the correct font and color (Black or any other color)
+            // Draw the text
             e.Graphics.DrawString(part, currentFont, Brushes.Black, x, y);
 
-            // Move the drawing position to the right
+            // Advance x position
             x += textSize.Width;
 
-            // Toggle bold state after each segment
+            // Toggle bold state
             isBold = !isBold;
         }
 
-        // Draw the focus rectangle if the node is selected
+        // Draw focus rectangle if selected
         if (isSelected)
-        {
-            // Define the focus rectangle bounds based on the node's bounds
-            Rectangle focusRect = e.Bounds;
-            focusRect.Inflate(1, 1);  // Optional: Add a little padding for focus rectangle
-            e.Graphics.DrawRectangle(Pens.Blue, focusRect);  // Draw the focus rectangle
-        }
-
+            ControlPaint.DrawFocusRectangle(e.Graphics, e.Bounds);
 
         // Dispose of the bold font
         boldFont.Dispose();
     }
+
 
     private async Task ProcessIndexingInBackground()
     {

@@ -100,7 +100,7 @@
             treeNode1.Name = "Node0";
             treeNode1.Text = "Result Item";
             treeVwResult.Nodes.AddRange(new TreeNode[] { treeNode1 });
-            treeVwResult.Size = new Size(379, 481);
+            treeVwResult.Size = new Size(379, 526);
             treeVwResult.TabIndex = 4;
             treeVwResult.DrawNode += treeVwResult_DrawNode;
             treeVwResult.NodeMouseDoubleClick += treeVwResult_NodeMouseDoubleClick;
@@ -108,7 +108,7 @@
             // statusLabel
             // 
             statusLabel.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            statusLabel.Location = new Point(12, 620);
+            statusLabel.Location = new Point(12, 665);
             statusLabel.Name = "statusLabel";
             statusLabel.Size = new Size(379, 33);
             statusLabel.TabIndex = 6;
@@ -119,7 +119,7 @@
             // 
             AutoScaleDimensions = new SizeF(8F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(403, 662);
+            ClientSize = new Size(403, 707);
             Controls.Add(statusLabel);
             Controls.Add(treeVwResult);
             Controls.Add(BtnSearchText);
