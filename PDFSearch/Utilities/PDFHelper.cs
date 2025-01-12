@@ -4,7 +4,7 @@ using System.IO;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.Content;
 
-namespace PDFSearch;
+namespace PDFSearch.Utilities;
 
 public static class PdfHelper
 {

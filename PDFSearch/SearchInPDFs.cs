@@ -1,35 +1,16 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Drawing;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Windows.Forms;
-using System.Threading;
-using PDFSearch.BackgroundPathFinder;
+﻿using PDFSearch.BackgroundPathFinder;
 using Microsoft.Extensions.Logging;
-using System.Diagnostics;
+using PDFSearch.Utilities;
+using PDFSearch.Acrobat;
+using System.Configuration;
 
 namespace PDFSearch;
 
 public partial class SearchInPDFs : Form
 {
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    public static extern bool EnumWindows(EnumWindowsProc enumProc, IntPtr lParam);
-
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
-
-    [DllImport("user32.dll")]
-    public static extern IntPtr GetParent(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
-    static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
-
-    [DllImport("user32.dll")]
-    static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
-
-    private IntPtr acrobatHandle = IntPtr.Zero;
+    
     private readonly string _launchDirectory;
+    private readonly AcrobatWindowManager acrobatWindowManager;
 
     // make object of lucene searcher
     private readonly LuceneSearcher LuceneSearcher = new();
@@ -40,6 +21,20 @@ public partial class SearchInPDFs : Form
     {
         _launchDirectory = launchDirectory;
         InitializeComponent();
+
+        // Check if configuration exists
+        ConfigManager config = ConfigManager.LoadConfig();
+
+        if (config == null)
+        {
+            // If no config, show the first-time setup
+            ShowFirstTimeSetup();
+        }
+        else
+        {
+            // Use existing configuration
+            MessageBox.Show($"Start File: {config.StartFile}\nPDF Opener: {config.PdfOpener}");
+        }
 
         // Add event handlers for TreeView redrawing after expand/collapse
         treeVwResult.AfterExpand += (s, e) => treeVwResult.Invalidate();
@@ -57,9 +52,45 @@ public partial class SearchInPDFs : Form
         // Initialize the PdfPathBackgroundService
         _pdfPathBackgroundService = new PdfPathBackgroundService(logger, acrobatService);
 
+        acrobatWindowManager = new AcrobatWindowManager(_launchDirectory);
+
         // Add form load event handler
         this.Load += SearchInPDFs_Load;
         this.Load += async (s, e) => await ProcessIndexingInBackground();
+    }
+
+    private void ShowFirstTimeSetup()
+    {
+        // Show file dialog for index.pdf
+        OpenFileDialog openFileDialog = new OpenFileDialog
+        {
+            Filter = "PDF Files|*.pdf",
+            Title = "Select the Start File (index.pdf)"
+        };
+
+        if (openFileDialog.ShowDialog() == DialogResult.OK)
+        {
+            string startFile = openFileDialog.FileName;
+
+            // Ask user to choose PDF opener
+            FolderBrowserDialog folderDialog = new();
+            folderDialog.Description = "Select the folder where your PDF Opener is located (e.g., Adobe Acrobat Reader folder)";
+            if (folderDialog.ShowDialog() == DialogResult.OK)
+            {
+                string pdfOpener = Path.Combine(folderDialog.SelectedPath, "AcroRd32.exe");  // Default name for Adobe Reader executable
+
+                // Save the config
+                ConfigManager config = new ConfigManager
+                {
+                    StartFile = startFile,
+                    PdfOpener = pdfOpener
+                };
+
+                config.SaveConfig();
+
+                MessageBox.Show("Configuration saved successfully!");
+            }
+        }
     }
 
     private void SearchInPDFs_Load(object sender, EventArgs e)
@@ -67,205 +98,27 @@ public partial class SearchInPDFs : Form
         // start filePath retriving service
         _pdfPathBackgroundService.Start();
 
+        FolderManager.LoadFolderStructure();
+        FolderManager.SaveFolderStructure(_launchDirectory);
+
+        // enable
+        GbRange.Height = 0;
+        GbRange.Visible = false;
+
+        // some import calling
+        BindFromToCombos();
+
+
+
         treeVwResult.DrawMode = TreeViewDrawMode.OwnerDrawText;
-        treeVwResult.DrawNode += treeVwResult_DrawNode;
         Thread.Sleep(1000); // Wait for Acrobat to initialize
         ArrangeWindows();
     }
 
-    // EnumWindows callback
-    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
-
-    private void FindOrLaunchAcrobatWindow()
-    {
-        try
-        {
-            //EnsureAcrobatClosed(); // Ensure that Acrobat is not running before launching
-
-            // Check if Acrobat process is running
-            var acrobatProcess = Process.GetProcessesByName("Acrobat").FirstOrDefault();
-            string indexFilePath = Path.Combine(_launchDirectory, "Index.pdf");
-
-            if (acrobatProcess == null)
-            {
-                // Acrobat is not running, attempt to start it
-                string acrobatPath = @"C:\Program Files\Adobe\Acrobat DC\Acrobat\Acrobat.exe"; // Adjust path if needed
-
-                if (File.Exists(acrobatPath))
-                {
-                    if (File.Exists(indexFilePath))
-                    {
-                        Process.Start(acrobatPath, $"\"{indexFilePath}\""); // Pass the file path as an argument
-                        Thread.Sleep(5000); // Wait for Acrobat to initialize
-                    }
-                    else
-                    {
-                        MessageBox.Show($"Index.pdf not found in the directory: {_launchDirectory}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        return;
-                    }
-                }
-                else
-                {
-                    MessageBox.Show("Adobe Acrobat not found at the expected location.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return;
-                }
-            }
-            else
-            {
-                // Ensure that Acrobat opens Index.pdf even if it's already running
-                if (File.Exists(indexFilePath))
-                {
-                    try
-                    {
-                        string acrobatPath = @"C:\Program Files\Adobe\Acrobat DC\Acrobat\Acrobat.exe"; // Adjust path if needed
-
-                        if (File.Exists(acrobatPath))
-                        {
-                            // Use ProcessStartInfo to launch Adobe Acrobat with the file
-                            var startInfo = new ProcessStartInfo
-                            {
-                                FileName = acrobatPath,
-                                Arguments = $"\"{indexFilePath}\"", // Pass the PDF file as an argument
-                                UseShellExecute = false // Do not use shell execute
-                            };
-
-                            Process.Start(startInfo);
-                        }
-                        else
-                        {
-                            MessageBox.Show("Adobe Acrobat executable not found at the specified path.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        MessageBox.Show($"Error opening Index.pdf with Acrobat: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    }
-                }
-                else
-                {
-                    MessageBox.Show($"Index.pdf not found in the directory: {_launchDirectory}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
-            }
-
-
-
-            // Find the Acrobat window
-            EnumWindows((hWnd, lParam) =>
-            {
-                StringBuilder windowText = new StringBuilder(256);
-                GetWindowText(hWnd, windowText, windowText.Capacity);
-
-                if (windowText.ToString().Contains("Adobe Acrobat") || windowText.ToString().Contains("Acrobat"))
-                {
-                    acrobatHandle = hWnd;
-                    return false; // Stop further enumeration
-                }
-
-                return true;
-            }, IntPtr.Zero);
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show($"Error finding or launching Acrobat: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-        }
-    }
-
-    private void ArrangeWindows()
-    {
-        try
-        {
-            FindOrLaunchAcrobatWindow();  // This method will now set the acrobatHandle
-
-            if (acrobatHandle != IntPtr.Zero)
-            {
-                // Get screen dimensions
-                int screenWidth = Screen.PrimaryScreen.WorkingArea.Width;
-                int screenHeight = Screen.PrimaryScreen.WorkingArea.Height;
-
-                // Calculate window sizes (30/70 split)
-                int yourAppWidth = (int)(screenWidth * 0.3);
-                int acrobatWidth = screenWidth - yourAppWidth;  // Use remaining space
-
-                const uint SWP_NOZORDER = 0x0004;
-                const uint SWP_SHOWWINDOW = 0x0040;
-                const uint flags = SWP_SHOWWINDOW | SWP_NOZORDER;
-
-                // Position your app first (left side)
-                SetWindowPos(this.Handle, IntPtr.Zero, 0, 0, yourAppWidth, screenHeight, flags);
-
-                // Position Acrobat (right side)
-                SetWindowPos(acrobatHandle, IntPtr.Zero, yourAppWidth, 0, acrobatWidth, screenHeight, flags);
-            }
-            else
-            {
-                MessageBox.Show("Adobe Acrobat window not found.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            }
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show($"Error arranging windows: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-        }
-    }
-    #region Unused Code for Search Event
-    //private void BtnSearchText_Click(object sender, EventArgs e)
-    //{
-    //    string? filePath = _pdfPathBackgroundService.FilePath;
-    //    filePath = RemoveFileName(filePath);
-
-    //    if (!string.IsNullOrEmpty(filePath))
-    //    {
-    //        MessageBox.Show($"Current active PDF file path: {filePath}");
-    //    }
-    //    else
-    //    {
-    //        MessageBox.Show("No active PDF file found.");
-    //    }
-
-    //    try
-    //    {
-    //        // Clear previous results in the TreeView
-    //        treeVwResult.Nodes.Clear();
-
-    //        string searchTerm = txtSearchBox.Text.Trim();
-    //        if (string.IsNullOrEmpty(searchTerm))
-    //        {
-    //            MessageBox.Show("Please enter a search term.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-    //            return;
-    //        }
-
-    //        // Search the results using Lucene or any other search mechanism
-    //        var results = LuceneSearcher.SearchInDirectory(searchTerm, _launchDirectory, filePath);
-
-    //        if (results.Count > 0)
-    //        {
-    //            foreach (var result in results)
-    //            {
-    //                // Create the root node for each search result (just the snippet)
-    //                TreeNode rootNode = new($"{result.Snippet} - FilePath: {result.RelativePath}")
-    //                {
-    //                    Tag = result  // Store the full result object in Tag property for reference
-    //                };
-
-    //                // Add the root node to the TreeView
-    //                treeVwResult.Nodes.Add(rootNode);
-    //            }
-    //        }
-    //        else
-    //        {
-    //            MessageBox.Show("No results found.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
-    //        }
-    //    }
-    //    catch (Exception ex)
-    //    {
-    //        MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-    //    }
-    //}
-    #endregion
-
     private void BtnSearchText_Click(object sender, EventArgs e)
     {
         string? filePath = _pdfPathBackgroundService.FilePath;
-        filePath = RemoveFileName(filePath);
+        filePath = DirectoryUtils.RemoveFileName(filePath);
 
         if (!string.IsNullOrEmpty(filePath))
         {
@@ -303,7 +156,7 @@ public partial class SearchInPDFs : Form
                     string fullDirectoryPath = group.Key;
 
                     // Apply abbreviation to the directory path
-                    string abbreviatedPath = AbbreviateDirectoryPath(fullDirectoryPath);
+                    string abbreviatedPath = DirectoryUtils.AbbreviateDirectoryPath(fullDirectoryPath);
 
                     // Create a directory-level node with the abbreviated path
                     var directoryNode = new TreeNode(abbreviatedPath)
@@ -359,29 +212,6 @@ public partial class SearchInPDFs : Form
         {
             MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
-    }
-
-    private string AbbreviateDirectoryPath(string fullPath, int maxLength = 50)
-    {
-        if (string.IsNullOrEmpty(fullPath) || fullPath.Length <= maxLength)
-            return fullPath;
-
-        string root = Path.GetPathRoot(fullPath); // E.g., "E:\"
-        string[] directories = fullPath.Substring(root.Length).Split(Path.DirectorySeparatorChar);
-
-        // Handle edge cases where there's no middle section
-        if (directories.Length <= 2)
-            return fullPath;
-
-        string middle = "...";
-        string leaf = directories[^1]; // Last directory name or file name
-        int remainingLength = maxLength - root.Length - leaf.Length - middle.Length - 2; // -2 for separator chars
-
-        if (remainingLength <= 0)
-            return $"{root}{middle}{Path.DirectorySeparatorChar}{leaf}";
-
-        string middlePart = string.Join(Path.DirectorySeparatorChar.ToString(), directories.TakeWhile(d => d.Length <= remainingLength));
-        return $"{root}{middle}{Path.DirectorySeparatorChar}{middlePart}{Path.DirectorySeparatorChar}{leaf}";
     }
 
     private void lstVwResult_DrawItem(object sender, DrawListViewItemEventArgs e)
@@ -444,41 +274,6 @@ public partial class SearchInPDFs : Form
         e.Handled = true;
     }
 
-    #region This is unused code for treeNode double click
-    //private void treeVwResult_NodeMouseDoubleClick(object sender, TreeNodeMouseClickEventArgs e)
-    //{
-    //    try
-    //    {
-    //        // Ensure a node is selected
-    //        var selectedNode = e.Node;
-    //        if (selectedNode != null)
-    //        {
-    //            // Retrieve the SearchResult (or equivalent object) stored in the Tag property
-    //            if (selectedNode.Tag is SearchResult selectedResult)
-    //            {
-    //                var filePath = selectedResult.FilePath;
-    //                var pageNumber = selectedResult.PageNumber;
-
-    //                // Open the PDF at the specific page (or implement your own logic)
-    //                PdfOpener.OpenPdfAtPage(filePath, pageNumber);
-    //            }
-    //            else
-    //            {
-    //                MessageBox.Show(@"Invalid search result.", @"Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-    //            }
-    //        }
-    //        else
-    //        {
-    //            MessageBox.Show(@"Please select a valid search result.", @"No Selection", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-    //        }
-    //    }
-    //    catch (Exception ex)
-    //    {
-    //        MessageBox.Show($@"Error: {ex.Message}", @"Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-    //    }
-    //}
-    #endregion
-
     private void treeVwResult_NodeMouseDoubleClick(object sender, TreeNodeMouseClickEventArgs e)
     {
         try
@@ -519,7 +314,6 @@ public partial class SearchInPDFs : Form
             MessageBox.Show($@"Error: {ex.Message}", @"Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
-
 
     private void treeVwResult_DrawNode(object sender, DrawTreeNodeEventArgs e)
     {
@@ -573,7 +367,6 @@ public partial class SearchInPDFs : Form
         boldFont.Dispose();
     }
 
-
     private async Task ProcessIndexingInBackground()
     {
         try
@@ -603,36 +396,86 @@ public partial class SearchInPDFs : Form
     private void SearchInPDFs_FormClosing(object sender, FormClosingEventArgs e)
     {
         _pdfPathBackgroundService.Stop();
-        EnsureAcrobatClosed();
+        acrobatWindowManager.EnsureAcrobatClosed();
     }
 
-    public static string RemoveFileName(string fullPath)
+    public void ArrangeWindows()
     {
-        string path = string.Empty;
-        if (!string.IsNullOrEmpty(fullPath))
+        try
         {
-            path = Path.GetDirectoryName(fullPath);
-            if (path != null && path.StartsWith("\\"))
+            acrobatWindowManager.FindOrLaunchAcrobatWindow();  // This method will now set the acrobatHandle
+
+            if (acrobatWindowManager.acrobatHandle != IntPtr.Zero)
             {
-                string driveLetter = fullPath.Substring(0, fullPath.IndexOf(':') + 1);
-                path = path.Substring(1).Insert(1, driveLetter + ":");
+                // Get screen dimensions
+                int screenWidth = Screen.PrimaryScreen.WorkingArea.Width;
+                int screenHeight = Screen.PrimaryScreen.WorkingArea.Height;
+
+                // Calculate window sizes (30/70 split)
+                int yourAppWidth = (int)(screenWidth * 0.25);
+                int acrobatWidth = screenWidth - yourAppWidth;  // Use remaining space
+
+                const uint SWP_NOZORDER = 0x0004;
+                const uint SWP_SHOWWINDOW = 0x0040;
+                const uint flags = SWP_SHOWWINDOW | SWP_NOZORDER;
+
+                // Position your app first (left side)
+                AcrobatWindowManager.SetWindowPos(this.Handle, IntPtr.Zero, 0, 0, yourAppWidth, screenHeight, flags);
+
+                // Position Acrobat (right side)
+                AcrobatWindowManager.SetWindowPos(acrobatWindowManager.acrobatHandle, IntPtr.Zero, yourAppWidth, 0, acrobatWidth, screenHeight, flags);
+            }
+            else
+            {
+                MessageBox.Show("Adobe Acrobat window not found.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
-        return path;
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error arranging windows: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 
-    private void EnsureAcrobatClosed()
+    private void RdBtnRamge_CheckedChanged(object sender, EventArgs e)
     {
-        foreach (var process in Process.GetProcessesByName("Acrobat"))
+        if (RdBtnRamge.Checked)
         {
-            try
+            GbRange.Visible = true;
+            GbRange.Height = 100;
+        }
+
+        if (RdBtnRamge.Checked == false)
+        {
+            GbRange.Visible = false;
+            GbRange.Height = 0;
+        }
+    }
+
+    private void BtnClose_Click(object sender, EventArgs e)
+    {
+        GbRange.Height = 0;
+        GbRange.Visible = false;
+        RdBtnRamge.Checked = false;
+    }
+
+    private void BindFromToCombos()
+    {
+        CmbTo.DataSource = null;
+        CmbFrom.DataSource = null;
+
+        List<string> directories = FolderManager.LoadFolderStructure();
+        if (directories.Count != 0)
+        {
+            foreach (string directory in directories)
             {
-                process.Kill();
-                process.WaitForExit();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error closing Acrobat process: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                if (!string.IsNullOrEmpty(directory))
+                {
+                    string NewPath = Helpers.Helpers.GetShortenedDirectoryPath(directory);
+
+                    CmbFrom.Items.Add(NewPath);
+                    CmbTo.Items.Add(NewPath);
+                }
+
             }
         }
     }

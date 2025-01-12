@@ -9,7 +9,7 @@ using Directory = System.IO.Directory;
 using System.Text;
 using PDFSearch.BackgroundPathFinder;
 
-namespace PDFSearch;
+namespace PDFSearch.Utilities;
 
 public class LuceneSearcher
 {    // Generate a unique index folder name for each directory

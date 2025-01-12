@@ -36,8 +36,16 @@
             chkCaseSensitive = new CheckBox();
             BtnSearchText = new Button();
             toolTip1 = new ToolTip(components);
+            BtnClose = new Button();
             treeVwResult = new TreeView();
             statusLabel = new Label();
+            GbRange = new GroupBox();
+            CmbTo = new ComboBox();
+            label2 = new Label();
+            label1 = new Label();
+            CmbFrom = new ComboBox();
+            RdBtnRamge = new RadioButton();
+            GbRange.SuspendLayout();
             SuspendLayout();
             // 
             // txtSearchBox
@@ -83,7 +91,7 @@
             // 
             BtnSearchText.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             BtnSearchText.Font = new Font("0xProto Nerd Font", 9F, FontStyle.Regular, GraphicsUnit.Point, 0);
-            BtnSearchText.Location = new Point(297, 99);
+            BtnSearchText.Location = new Point(297, 76);
             BtnSearchText.Name = "BtnSearchText";
             BtnSearchText.Size = new Size(94, 29);
             BtnSearchText.TabIndex = 3;
@@ -92,15 +100,27 @@
             BtnSearchText.Click += BtnSearchText_Click;
             BtnSearchText.KeyPress += BtnSearchText_KeyPress;
             // 
+            // BtnClose
+            // 
+            BtnClose.AutoEllipsis = true;
+            BtnClose.Location = new Point(246, 26);
+            BtnClose.Name = "BtnClose";
+            BtnClose.Size = new Size(27, 25);
+            BtnClose.TabIndex = 4;
+            BtnClose.Text = "X";
+            toolTip1.SetToolTip(BtnClose, "Close range selector\r\n");
+            BtnClose.UseVisualStyleBackColor = true;
+            BtnClose.Click += BtnClose_Click;
+            // 
             // treeVwResult
             // 
             treeVwResult.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            treeVwResult.Location = new Point(12, 136);
+            treeVwResult.Location = new Point(12, 246);
             treeVwResult.Name = "treeVwResult";
             treeNode1.Name = "Node0";
             treeNode1.Text = "Result Item";
             treeVwResult.Nodes.AddRange(new TreeNode[] { treeNode1 });
-            treeVwResult.Size = new Size(379, 526);
+            treeVwResult.Size = new Size(379, 416);
             treeVwResult.TabIndex = 4;
             treeVwResult.DrawNode += treeVwResult_DrawNode;
             treeVwResult.NodeMouseDoubleClick += treeVwResult_NodeMouseDoubleClick;
@@ -115,11 +135,73 @@
             statusLabel.Text = "Status: ";
             statusLabel.TextAlign = ContentAlignment.MiddleCenter;
             // 
+            // GbRange
+            // 
+            GbRange.Controls.Add(BtnClose);
+            GbRange.Controls.Add(CmbTo);
+            GbRange.Controls.Add(label2);
+            GbRange.Controls.Add(label1);
+            GbRange.Controls.Add(CmbFrom);
+            GbRange.Location = new Point(12, 106);
+            GbRange.Name = "GbRange";
+            GbRange.Size = new Size(379, 134);
+            GbRange.TabIndex = 7;
+            GbRange.TabStop = false;
+            GbRange.Text = "Select Range";
+            // 
+            // CmbTo
+            // 
+            CmbTo.FormattingEnabled = true;
+            CmbTo.Location = new Point(58, 93);
+            CmbTo.Name = "CmbTo";
+            CmbTo.Size = new Size(315, 28);
+            CmbTo.TabIndex = 3;
+            // 
+            // label2
+            // 
+            label2.AutoSize = true;
+            label2.Location = new Point(6, 96);
+            label2.Name = "label2";
+            label2.Size = new Size(28, 20);
+            label2.TabIndex = 2;
+            label2.Text = "To:";
+            // 
+            // label1
+            // 
+            label1.AutoSize = true;
+            label1.Location = new Point(6, 60);
+            label1.Name = "label1";
+            label1.Size = new Size(46, 20);
+            label1.TabIndex = 1;
+            label1.Text = "From:";
+            // 
+            // CmbFrom
+            // 
+            CmbFrom.FormattingEnabled = true;
+            CmbFrom.Location = new Point(58, 57);
+            CmbFrom.Name = "CmbFrom";
+            CmbFrom.Size = new Size(315, 28);
+            CmbFrom.TabIndex = 0;
+            // 
+            // RdBtnRamge
+            // 
+            RdBtnRamge.AutoSize = true;
+            RdBtnRamge.Location = new Point(267, 47);
+            RdBtnRamge.Name = "RdBtnRamge";
+            RdBtnRamge.Size = new Size(124, 24);
+            RdBtnRamge.TabIndex = 8;
+            RdBtnRamge.TabStop = true;
+            RdBtnRamge.Text = " Range Search";
+            RdBtnRamge.UseVisualStyleBackColor = true;
+            RdBtnRamge.CheckedChanged += RdBtnRamge_CheckedChanged;
+            // 
             // SearchInPDFs
             // 
             AutoScaleDimensions = new SizeF(8F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(403, 707);
+            Controls.Add(RdBtnRamge);
+            Controls.Add(GbRange);
             Controls.Add(statusLabel);
             Controls.Add(treeVwResult);
             Controls.Add(BtnSearchText);
@@ -130,6 +212,8 @@
             Name = "SearchInPDFs";
             Text = "SearchInPDFs";
             FormClosing += SearchInPDFs_FormClosing;
+            GbRange.ResumeLayout(false);
+            GbRange.PerformLayout();
             ResumeLayout(false);
             PerformLayout();
         }
@@ -143,5 +227,12 @@
         private ToolTip toolTip1;
         private TreeView treeVwResult;
         private Label statusLabel;
+        private GroupBox GbRange;
+        private ComboBox CmbTo;
+        private Label label2;
+        private Label label1;
+        private ComboBox CmbFrom;
+        private RadioButton RdBtnRamge;
+        private Button BtnClose;
     }
 }

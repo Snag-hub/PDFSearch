@@ -13,7 +13,7 @@ using System.Xml;
 using Directory = System.IO.Directory;
 using System.Collections.Concurrent;
 
-namespace PDFSearch;
+namespace PDFSearch.Utilities;
 
 public static class LuceneIndexer
 {
