@@ -7,7 +7,6 @@ using System;
 using System.Collections.Generic;
 using Directory = System.IO.Directory;
 using System.Text;
-using PDFSearch.BackgroundPathFinder;
 
 namespace PDFSearch.Utilities;
 

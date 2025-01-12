@@ -1,5 +1,4 @@
-﻿using PDFSearch.BackgroundPathFinder;
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using PDFSearch.Utilities;
 using PDFSearch.Acrobat;
 using System.Configuration;
@@ -8,19 +7,19 @@ namespace PDFSearch;
 
 public partial class SearchInPDFs : Form
 {
-    
+
     private readonly string _launchDirectory;
     private readonly AcrobatWindowManager acrobatWindowManager;
 
     // make object of lucene searcher
     private readonly LuceneSearcher LuceneSearcher = new();
-    private readonly PdfPathBackgroundService _pdfPathBackgroundService;
 
 
     public SearchInPDFs(string launchDirectory)
     {
         _launchDirectory = launchDirectory;
         InitializeComponent();
+        InitializeDataGridView();
 
         // Check if configuration exists
         ConfigManager config = ConfigManager.LoadConfig();
@@ -36,28 +35,33 @@ public partial class SearchInPDFs : Form
             MessageBox.Show($"Start File: {config.StartFile}\nPDF Opener: {config.PdfOpener}");
         }
 
-        // Add event handlers for TreeView redrawing after expand/collapse
-        treeVwResult.AfterExpand += (s, e) => treeVwResult.Invalidate();
-        treeVwResult.AfterCollapse += (s, e) => treeVwResult.Invalidate();
-
-        // Initialize the logger (you can configure it as per your requirements)
-        ILogger<PdfPathBackgroundService> logger = LoggerFactory.Create(builder =>
-        {
-            builder.AddConsole();
-        }).CreateLogger<PdfPathBackgroundService>();
-
-        // Initialize the IAcrobatService
-        IAcrobatService acrobatService = new AcrobatService(); // Use your actual service
-
-        // Initialize the PdfPathBackgroundService
-        _pdfPathBackgroundService = new PdfPathBackgroundService(logger, acrobatService);
-
         acrobatWindowManager = new AcrobatWindowManager(_launchDirectory);
 
         // Add form load event handler
         this.Load += SearchInPDFs_Load;
         this.Load += async (s, e) => await ProcessIndexingInBackground();
+        TvSearchRange.AfterCheck += TvSearchRange_AfterCheck;
     }
+
+    private void InitializeDataGridView()
+    {
+        dataGridViewResults.Columns.Clear();
+
+        dataGridViewResults.Columns.Add("Fleet", "Fleet");
+        dataGridViewResults.Columns.Add("Carriers", "Carriers");
+        dataGridViewResults.Columns.Add("Vessel", "Vessel");
+        dataGridViewResults.Columns.Add("Part", "Part");
+        dataGridViewResults.Columns.Add("Manual", "Manual");
+        dataGridViewResults.Columns.Add("PageNoWithContent", "PageNoWithContent");
+        var fullPathColumn = new DataGridViewTextBoxColumn
+        {
+            Name = "FullPath",
+            HeaderText = "FullPath",
+            Visible = false // Hide the FullPath column
+        };
+        dataGridViewResults.Columns.Add(fullPathColumn);
+    }
+
 
     private void ShowFirstTimeSetup()
     {
@@ -80,7 +84,7 @@ public partial class SearchInPDFs : Form
                 string pdfOpener = Path.Combine(folderDialog.SelectedPath, "AcroRd32.exe");  // Default name for Adobe Reader executable
 
                 // Save the config
-                ConfigManager config = new ConfigManager
+                ConfigManager config = new()
                 {
                     StartFile = startFile,
                     PdfOpener = pdfOpener
@@ -95,44 +99,260 @@ public partial class SearchInPDFs : Form
 
     private void SearchInPDFs_Load(object sender, EventArgs e)
     {
-        // start filePath retriving service
-        _pdfPathBackgroundService.Start();
+        List<string> folderStructure = FolderManager.LoadFolderStructure(); if (folderStructure.Count == 0)
+        {
+            FolderManager.SaveFolderStructure(_launchDirectory);
+            folderStructure = FolderManager.LoadFolderStructure();
+        }
 
-        FolderManager.LoadFolderStructure();
-        FolderManager.SaveFolderStructure(_launchDirectory);
-
-        // enable
-        GbRange.Height = 0;
-        GbRange.Visible = false;
+        AddDirectoriesToTreeView(_launchDirectory, folderStructure);
+        TvSearchRange.ExpandAll();
 
         // some import calling
         BindFromToCombos();
+        ShowHideResultGroupBox();
 
 
 
-        treeVwResult.DrawMode = TreeViewDrawMode.OwnerDrawText;
+        //treeVwResult.DrawMode = TreeViewDrawMode.OwnerDrawText;
         Thread.Sleep(1000); // Wait for Acrobat to initialize
         ArrangeWindows();
     }
 
-    private void BtnSearchText_Click(object sender, EventArgs e)
+    private void AddDirectoriesToTreeView(string launchDirectory, List<string> folderStructure)
     {
-        string? filePath = _pdfPathBackgroundService.FilePath;
-        filePath = DirectoryUtils.RemoveFileName(filePath);
-
-        if (!string.IsNullOrEmpty(filePath))
+        if (folderStructure == null || folderStructure.Count == 0)
         {
-            MessageBox.Show($"Current active PDF file path: {filePath}");
+            return;
+        }
+
+        // Create the root node based on the E-Library starting point
+        string rootFolderName = new DirectoryInfo(launchDirectory).Name;
+        TreeNode rootNode = new TreeNode(rootFolderName)
+        {
+            Tag = launchDirectory
+        };
+        TvSearchRange.Nodes.Add(rootNode);
+
+        // Create a dictionary to store nodes by their full paths
+        Dictionary<string, TreeNode> nodes = new Dictionary<string, TreeNode>
+        {
+            { launchDirectory, rootNode }
+        };
+
+        foreach (string path in folderStructure)
+        {
+            // Only add paths that are under the _launchDirectory
+            if (path.StartsWith(launchDirectory, StringComparison.OrdinalIgnoreCase))
+            {
+                string relativePath = path.Substring(launchDirectory.Length).TrimStart(Path.DirectorySeparatorChar);
+                string[] parts = relativePath.Split(Path.DirectorySeparatorChar);
+                string currentPath = launchDirectory;
+                TreeNode parentNode = rootNode;
+
+                foreach (string part in parts)
+                {
+                    currentPath = Path.Combine(currentPath, part);
+
+                    if (!nodes.ContainsKey(currentPath))
+                    {
+                        TreeNode newNode = new TreeNode(part)
+                        {
+                            Tag = currentPath
+                        };
+
+                        if (parentNode != null)
+                        {
+                            parentNode.Nodes.Add(newNode);
+                        }
+
+                        nodes[currentPath] = newNode;
+                    }
+
+                    parentNode = nodes[currentPath];
+                }
+            }
+        }
+    }
+
+
+    private void CheckAllChildNodes(TreeNode parentNode, bool isChecked)
+    {
+        foreach (TreeNode childNode in parentNode.Nodes)
+        {
+            childNode.Checked = isChecked;
+            if (childNode.Nodes.Count > 0)
+            {
+                CheckAllChildNodes(childNode, isChecked);
+            }
+        }
+    }
+
+    private List<string> GetSelectedDirectories(TreeNodeCollection nodes)
+    {
+        List<string> selectedDirectories = new List<string>();
+
+        foreach (TreeNode node in nodes)
+        {
+            // Only add the node if it's checked and all its child nodes are checked
+            if (node.Checked && AreAllChildNodesChecked(node))
+            {
+                if (node.Tag is string fullPath)
+                {
+                    selectedDirectories.Add(fullPath);
+                }
+            }
+            else
+            {
+                // Recursively check child nodes
+                selectedDirectories.AddRange(GetSelectedDirectories(node.Nodes));
+            }
+        }
+
+        return selectedDirectories.Distinct().ToList(); // Ensure there are no duplicates
+    }
+
+    private bool AreAllChildNodesChecked(TreeNode parentNode)
+    {
+        foreach (TreeNode childNode in parentNode.Nodes)
+        {
+            if (!childNode.Checked || !AreAllChildNodesChecked(childNode))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+
+
+
+    private void ShowHideResultGroupBox()
+    {
+        if (grpBoxSearchResult.Visible == false)
+        {
+            grpBoxSearchResult.Location = new Point(12, 12);
+            grpBoxSearchResult.Visible = true;
+            grpBoxSearch.Visible = false;
         }
         else
         {
-            MessageBox.Show("No active PDF file found.");
+            grpBoxSearchResult.Visible = false;
+            grpBoxSearch.Visible = true;
         }
+    }
+
+    #region This is not in use for range based search
+    //private void BtnSearchText_Click(object sender, EventArgs e)
+    //{
+    //    string? filePath = _pdfPathBackgroundService.FilePath;
+    //    filePath = DirectoryUtils.RemoveFileName(filePath);
+
+    //    if (!string.IsNullOrEmpty(filePath))
+    //    {
+    //        MessageBox.Show($"Current active PDF file path: {filePath}");
+    //    }
+    //    else
+    //    {
+    //        MessageBox.Show("No active PDF file found.");
+    //    }
+
+    //    try
+    //    {
+    //        // Clear previous results in the TreeView
+    //        treeVwResult.Nodes.Clear();
+
+    //        string searchTerm = txtSearchBox.Text.Trim();
+    //        if (string.IsNullOrEmpty(searchTerm))
+    //        {
+    //            MessageBox.Show("Please enter a search term.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+    //            return;
+    //        }
+
+    //        ShowHideResultGroupBox();
+
+    //        // Search the results using Lucene or any other search mechanism
+    //        var results = LuceneSearcher.SearchInDirectory(searchTerm, _launchDirectory, filePath);
+
+    //        if (results.Count > 0)
+    //        {
+    //            // Group results by directory
+    //            var groupedResults = results
+    //                .GroupBy(r => Path.GetDirectoryName(r.FilePath))
+    //                .OrderBy(g => g.Key); // Sort by directory name
+
+    //            foreach (var group in groupedResults)
+    //            {
+    //                string fullDirectoryPath = group.Key;
+
+    //                // Apply abbreviation to the directory path
+    //                string abbreviatedPath = DirectoryUtils.AbbreviateDirectoryPath(fullDirectoryPath);
+
+    //                // Create a directory-level node with the abbreviated path
+    //                var directoryNode = new TreeNode(abbreviatedPath)
+    //                {
+    //                    Tag = fullDirectoryPath // Store the full directory path for reference
+    //                };
+
+    //                // Further group results by file path within the directory
+    //                var fileGroups = group
+    //                    .GroupBy(r => r.FilePath)
+    //                    .OrderBy(g => g.Key); // Sort by file name
+
+    //                foreach (var fileGroup in fileGroups)
+    //                {
+    //                    string fileName = Path.GetFileName(fileGroup.Key);
+
+    //                    // Create the file node
+    //                    var fileNode = new TreeNode(fileName)
+    //                    {
+    //                        Tag = fileGroup.Key // Store the full file path for reference
+    //                    };
+
+    //                    // Add snippet and page number nodes for each result in the file group
+    //                    foreach (var result in fileGroup)
+    //                    {
+    //                        string snippetText = result.Snippet ?? "No snippet available";
+    //                        string pageText = result.PageNumber > 0 ? $"Page {result.PageNumber}" : "Page number not found";
+
+    //                        var snippetNode = new TreeNode($"{pageText}: {snippetText}")
+    //                        {
+    //                            Tag = result // Optionally associate the SearchResult object here
+    //                        };
+
+    //                        fileNode.Nodes.Add(snippetNode);
+    //                    }
+
+    //                    // Add the file node to the directory node
+    //                    directoryNode.Nodes.Add(fileNode);
+    //                }
+
+    //                // Add the directory node to the TreeView
+    //                treeVwResult.Nodes.Add(directoryNode);
+    //            }
+
+    //            treeVwResult.CollapseAll(); // Ensure all nodes are collapsed by default
+    //        }
+    //        else
+    //        {
+    //            MessageBox.Show("No results found.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    //        }
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+    //    }
+    //}
+    #endregion
+
+    private void BtnSearchText_Click(object sender, EventArgs e)
+    {
+        string? filePath = null;
 
         try
         {
-            // Clear previous results in the TreeView
-            treeVwResult.Nodes.Clear();
+            // Clear previous results in the DataGridView
+            dataGridViewResults.Rows.Clear();
 
             string searchTerm = txtSearchBox.Text.Trim();
             if (string.IsNullOrEmpty(searchTerm))
@@ -141,67 +361,34 @@ public partial class SearchInPDFs : Form
                 return;
             }
 
-            // Search the results using Lucene or any other search mechanism
+            ShowHideResultGroupBox();
+
+            // Get selected directories from the TreeView
+            List<string> selectedDirectories = GetSelectedDirectories(TvSearchRange.Nodes);
+
+            // Perform the search in the _launchDirectory
             var results = LuceneSearcher.SearchInDirectory(searchTerm, _launchDirectory, filePath);
 
-            if (results.Count > 0)
+            // Filter the results based on the selected directories
+            var filteredResults = results.Where(r => selectedDirectories.Any(d => r.FilePath.StartsWith(d, StringComparison.OrdinalIgnoreCase))).ToList();
+
+            if (filteredResults.Count > 0)
             {
-                // Group results by directory
-                var groupedResults = results
-                    .GroupBy(r => Path.GetDirectoryName(r.FilePath))
-                    .OrderBy(g => g.Key); // Sort by directory name
-
-                foreach (var group in groupedResults)
+                foreach (var result in filteredResults)
                 {
-                    string fullDirectoryPath = group.Key;
+                    string fullPath = result.FilePath;
+                    string[] splitPath = fullPath.Split(Path.DirectorySeparatorChar);
+                    string fleet = splitPath.Length > 3 ? splitPath[3] : string.Empty;
+                    string vessel = splitPath.Length > 4 ? splitPath[4] : string.Empty;
+                    string part = splitPath.Length > 5 ? splitPath[5] : string.Empty;
+                    string manual = Path.GetFileNameWithoutExtension(fullPath);
 
-                    // Apply abbreviation to the directory path
-                    string abbreviatedPath = DirectoryUtils.AbbreviateDirectoryPath(fullDirectoryPath);
+                    string pageNoWithContent = result.PageNumber > 0 ? $"Page {result.PageNumber}: {result.Snippet}" : result.Snippet;
 
-                    // Create a directory-level node with the abbreviated path
-                    var directoryNode = new TreeNode(abbreviatedPath)
-                    {
-                        Tag = fullDirectoryPath // Store the full directory path for reference
-                    };
-
-                    // Further group results by file path within the directory
-                    var fileGroups = group
-                        .GroupBy(r => r.FilePath)
-                        .OrderBy(g => g.Key); // Sort by file name
-
-                    foreach (var fileGroup in fileGroups)
-                    {
-                        string fileName = Path.GetFileName(fileGroup.Key);
-
-                        // Create the file node
-                        var fileNode = new TreeNode(fileName)
-                        {
-                            Tag = fileGroup.Key // Store the full file path for reference
-                        };
-
-                        // Add snippet and page number nodes for each result in the file group
-                        foreach (var result in fileGroup)
-                        {
-                            string snippetText = result.Snippet ?? "No snippet available";
-                            string pageText = result.PageNumber > 0 ? $"Page {result.PageNumber}" : "Page number not found";
-
-                            var snippetNode = new TreeNode($"{pageText}: {snippetText}")
-                            {
-                                Tag = result // Optionally associate the SearchResult object here
-                            };
-
-                            fileNode.Nodes.Add(snippetNode);
-                        }
-
-                        // Add the file node to the directory node
-                        directoryNode.Nodes.Add(fileNode);
-                    }
-
-                    // Add the directory node to the TreeView
-                    treeVwResult.Nodes.Add(directoryNode);
+                    dataGridViewResults.Rows.Add(fleet, string.Empty, vessel, part, manual, pageNoWithContent, fullPath);
                 }
 
-                treeVwResult.CollapseAll(); // Ensure all nodes are collapsed by default
+                dataGridViewResults.AutoResizeColumns();
             }
             else
             {
@@ -213,6 +400,15 @@ public partial class SearchInPDFs : Form
             MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
+    private void BtnSearchText_KeyPress(object sender, KeyPressEventArgs e)
+    {
+        if (e.KeyChar != (char)Keys.Enter) return;
+        BtnSearchText.PerformClick();
+        e.Handled = true;
+    }
+
+
+
 
     private void lstVwResult_DrawItem(object sender, DrawListViewItemEventArgs e)
     {
@@ -267,12 +463,6 @@ public partial class SearchInPDFs : Form
         boldFont.Dispose();
     }
 
-    private void BtnSearchText_KeyPress(object sender, KeyPressEventArgs e)
-    {
-        if (e.KeyChar != (char)Keys.Enter) return;
-        BtnSearchText.PerformClick();
-        e.Handled = true;
-    }
 
     private void treeVwResult_NodeMouseDoubleClick(object sender, TreeNodeMouseClickEventArgs e)
     {
@@ -296,14 +486,6 @@ public partial class SearchInPDFs : Form
                 // Open the PDF at the specific page
                 PdfOpener.OpenPdfAtPage(filePath, pageNumber);
             }
-            // commented because not not needed in production
-            //else if (selectedNode.Tag is string directoryPath)
-            //{
-            //    // This is a directory node
-            //    MessageBox.Show($"Selected directory: {directoryPath}", @"Directory Selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            //    // Optionally open the directory in file explorer
-            //    System.Diagnostics.Process.Start("explorer.exe", directoryPath);
-            //}
             else
             {
                 MessageBox.Show(@"Invalid node selected.", @"Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -395,7 +577,6 @@ public partial class SearchInPDFs : Form
 
     private void SearchInPDFs_FormClosing(object sender, FormClosingEventArgs e)
     {
-        _pdfPathBackgroundService.Stop();
         acrobatWindowManager.EnsureAcrobatClosed();
     }
 
@@ -436,32 +617,9 @@ public partial class SearchInPDFs : Form
         }
     }
 
-    private void RdBtnRamge_CheckedChanged(object sender, EventArgs e)
-    {
-        if (RdBtnRamge.Checked)
-        {
-            GbRange.Visible = true;
-            GbRange.Height = 100;
-        }
-
-        if (RdBtnRamge.Checked == false)
-        {
-            GbRange.Visible = false;
-            GbRange.Height = 0;
-        }
-    }
-
-    private void BtnClose_Click(object sender, EventArgs e)
-    {
-        GbRange.Height = 0;
-        GbRange.Visible = false;
-        RdBtnRamge.Checked = false;
-    }
 
     private void BindFromToCombos()
     {
-        CmbTo.DataSource = null;
-        CmbFrom.DataSource = null;
 
         List<string> directories = FolderManager.LoadFolderStructure();
         if (directories.Count != 0)
@@ -472,11 +630,106 @@ public partial class SearchInPDFs : Form
                 {
                     string NewPath = Helpers.Helpers.GetShortenedDirectoryPath(directory);
 
-                    CmbFrom.Items.Add(NewPath);
-                    CmbTo.Items.Add(NewPath);
+
                 }
 
             }
         }
     }
+
+    private void BtnRetSearch_Click(object sender, EventArgs e)
+    {
+        ShowHideResultGroupBox();
+    }
+
+    private void TvSearchRange_AfterCheck(object sender, TreeViewEventArgs e)
+    {
+        // Check/uncheck all child nodes
+        if (e.Node.Nodes.Count > 0)
+        {
+            CheckAllChildNodes(e.Node, e.Node.Checked);
+        }
+    }
+
+    private void dataGridViewResults_CellPainting(object sender, DataGridViewCellPaintingEventArgs e)
+    {
+        if (e.RowIndex < 0 || e.ColumnIndex < 0)
+            return;
+
+        e.Handled = true;
+        e.PaintBackground(e.CellBounds, e.State.HasFlag(DataGridViewElementStates.Selected));
+
+        Font regularFont = e.CellStyle.Font;
+        Font boldFont = new Font(e.CellStyle.Font, FontStyle.Bold);
+
+        // Get the text to draw
+        string text = e.FormattedValue?.ToString() ?? string.Empty;
+
+        // Split text by <b> and </b> tags
+        string[] parts = text.Split(new[] { "<b>", "</b>" }, StringSplitOptions.None);
+        bool isBold = false;
+
+        // Variables for drawing
+        float x = e.CellBounds.Left + 5;
+        float y = e.CellBounds.Top + (e.CellBounds.Height - e.CellStyle.Font.Height) / 2;
+
+        foreach (string part in parts)
+        {
+            Font currentFont = isBold ? boldFont : regularFont;
+
+            // Measure text size
+            SizeF textSize = e.Graphics.MeasureString(part, currentFont);
+
+            // Draw the text
+            e.Graphics.DrawString(part, currentFont, Brushes.Black, x, y);
+
+            // Advance x position
+            x += textSize.Width;
+
+            // Toggle bold state
+            isBold = !isBold;
+        }
+
+        // Draw the focus rectangle if selected
+        if (e.State.HasFlag(DataGridViewElementStates.Selected))
+            e.Graphics.DrawRectangle(Pens.Black, e.CellBounds.X, e.CellBounds.Y, e.CellBounds.Width - 1, e.CellBounds.Height - 1);
+    }
+
+    private void dataGridViewResults_CellMouseDoubleClick(object sender, DataGridViewCellMouseEventArgs e)
+    {
+        try
+        {
+            // Ensure a cell is selected
+            if (e.RowIndex >= 0)
+            {
+                // Get the full path from the hidden FullPath column
+                var selectedRow = dataGridViewResults.Rows[e.RowIndex];
+                var fullPath = selectedRow.Cells["FullPath"].Value?.ToString();
+
+                if (!string.IsNullOrEmpty(fullPath))
+                {
+                    // Assuming you have a method to open PDF at a specific page
+                    // You might need to store additional information like page number in a hidden column or elsewhere
+                    // For simplicity, I'm using page number 0 here
+                    int pageNumber = 0;
+
+                    // Open the PDF at the specific page
+                    PdfOpener.OpenPdfAtPage(fullPath, pageNumber);
+                }
+                else
+                {
+                    MessageBox.Show("Invalid file path selected.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
+            else
+            {
+                MessageBox.Show("Please select a valid row.", "No Selection", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
 }

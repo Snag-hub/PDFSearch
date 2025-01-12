@@ -29,23 +29,22 @@
         private void InitializeComponent()
         {
             components = new System.ComponentModel.Container();
-            TreeNode treeNode1 = new TreeNode("Result Item");
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(SearchInPDFs));
             txtSearchBox = new TextBox();
             chkWholeWord = new CheckBox();
             chkCaseSensitive = new CheckBox();
             BtnSearchText = new Button();
             toolTip1 = new ToolTip(components);
-            BtnClose = new Button();
-            treeVwResult = new TreeView();
             statusLabel = new Label();
-            GbRange = new GroupBox();
-            CmbTo = new ComboBox();
-            label2 = new Label();
+            grpBoxSearch = new GroupBox();
             label1 = new Label();
-            CmbFrom = new ComboBox();
-            RdBtnRamge = new RadioButton();
-            GbRange.SuspendLayout();
+            TvSearchRange = new TreeView();
+            grpBoxSearchResult = new GroupBox();
+            dataGridViewResults = new DataGridView();
+            BtnRetSearch = new Button();
+            grpBoxSearch.SuspendLayout();
+            grpBoxSearchResult.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)dataGridViewResults).BeginInit();
             SuspendLayout();
             // 
             // txtSearchBox
@@ -57,19 +56,19 @@
             txtSearchBox.BorderStyle = BorderStyle.FixedSingle;
             txtSearchBox.Cursor = Cursors.Hand;
             txtSearchBox.Font = new Font("0xProto Nerd Font", 9F, FontStyle.Regular, GraphicsUnit.Point, 0);
-            txtSearchBox.Location = new Point(12, 12);
+            txtSearchBox.Location = new Point(9, 51);
             txtSearchBox.Margin = new Padding(6);
             txtSearchBox.Name = "txtSearchBox";
             txtSearchBox.PlaceholderText = "Enter text to search";
             txtSearchBox.RightToLeft = RightToLeft.No;
-            txtSearchBox.Size = new Size(379, 25);
+            txtSearchBox.Size = new Size(393, 25);
             txtSearchBox.TabIndex = 0;
             // 
             // chkWholeWord
             // 
             chkWholeWord.AutoSize = true;
             chkWholeWord.Font = new Font("0xProto Nerd Font", 7.79999971F, FontStyle.Regular, GraphicsUnit.Point, 0);
-            chkWholeWord.Location = new Point(12, 52);
+            chkWholeWord.Location = new Point(9, 91);
             chkWholeWord.Name = "chkWholeWord";
             chkWholeWord.Size = new Size(149, 19);
             chkWholeWord.TabIndex = 1;
@@ -80,7 +79,7 @@
             // 
             chkCaseSensitive.AutoSize = true;
             chkCaseSensitive.Font = new Font("0xProto Nerd Font", 7.79999971F, FontStyle.Regular, GraphicsUnit.Point, 0);
-            chkCaseSensitive.Location = new Point(12, 81);
+            chkCaseSensitive.Location = new Point(9, 120);
             chkCaseSensitive.Name = "chkCaseSensitive";
             chkCaseSensitive.Size = new Size(141, 19);
             chkCaseSensitive.TabIndex = 2;
@@ -89,133 +88,112 @@
             // 
             // BtnSearchText
             // 
-            BtnSearchText.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            BtnSearchText.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             BtnSearchText.Font = new Font("0xProto Nerd Font", 9F, FontStyle.Regular, GraphicsUnit.Point, 0);
-            BtnSearchText.Location = new Point(297, 76);
+            BtnSearchText.Location = new Point(3, 546);
             BtnSearchText.Name = "BtnSearchText";
-            BtnSearchText.Size = new Size(94, 29);
+            BtnSearchText.Size = new Size(393, 29);
             BtnSearchText.TabIndex = 3;
             BtnSearchText.Text = "Search";
             BtnSearchText.UseVisualStyleBackColor = true;
             BtnSearchText.Click += BtnSearchText_Click;
             BtnSearchText.KeyPress += BtnSearchText_KeyPress;
             // 
-            // BtnClose
-            // 
-            BtnClose.AutoEllipsis = true;
-            BtnClose.Location = new Point(246, 26);
-            BtnClose.Name = "BtnClose";
-            BtnClose.Size = new Size(27, 25);
-            BtnClose.TabIndex = 4;
-            BtnClose.Text = "X";
-            toolTip1.SetToolTip(BtnClose, "Close range selector\r\n");
-            BtnClose.UseVisualStyleBackColor = true;
-            BtnClose.Click += BtnClose_Click;
-            // 
-            // treeVwResult
-            // 
-            treeVwResult.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            treeVwResult.Location = new Point(12, 246);
-            treeVwResult.Name = "treeVwResult";
-            treeNode1.Name = "Node0";
-            treeNode1.Text = "Result Item";
-            treeVwResult.Nodes.AddRange(new TreeNode[] { treeNode1 });
-            treeVwResult.Size = new Size(379, 416);
-            treeVwResult.TabIndex = 4;
-            treeVwResult.DrawNode += treeVwResult_DrawNode;
-            treeVwResult.NodeMouseDoubleClick += treeVwResult_NodeMouseDoubleClick;
-            // 
             // statusLabel
             // 
             statusLabel.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             statusLabel.Location = new Point(12, 665);
             statusLabel.Name = "statusLabel";
-            statusLabel.Size = new Size(379, 33);
+            statusLabel.Size = new Size(411, 33);
             statusLabel.TabIndex = 6;
             statusLabel.Text = "Status: ";
             statusLabel.TextAlign = ContentAlignment.MiddleCenter;
             // 
-            // GbRange
+            // grpBoxSearch
             // 
-            GbRange.Controls.Add(BtnClose);
-            GbRange.Controls.Add(CmbTo);
-            GbRange.Controls.Add(label2);
-            GbRange.Controls.Add(label1);
-            GbRange.Controls.Add(CmbFrom);
-            GbRange.Location = new Point(12, 106);
-            GbRange.Name = "GbRange";
-            GbRange.Size = new Size(379, 134);
-            GbRange.TabIndex = 7;
-            GbRange.TabStop = false;
-            GbRange.Text = "Select Range";
-            // 
-            // CmbTo
-            // 
-            CmbTo.FormattingEnabled = true;
-            CmbTo.Location = new Point(58, 93);
-            CmbTo.Name = "CmbTo";
-            CmbTo.Size = new Size(315, 28);
-            CmbTo.TabIndex = 3;
-            // 
-            // label2
-            // 
-            label2.AutoSize = true;
-            label2.Location = new Point(6, 96);
-            label2.Name = "label2";
-            label2.Size = new Size(28, 20);
-            label2.TabIndex = 2;
-            label2.Text = "To:";
+            grpBoxSearch.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            grpBoxSearch.Controls.Add(label1);
+            grpBoxSearch.Controls.Add(TvSearchRange);
+            grpBoxSearch.Controls.Add(txtSearchBox);
+            grpBoxSearch.Controls.Add(chkWholeWord);
+            grpBoxSearch.Controls.Add(chkCaseSensitive);
+            grpBoxSearch.Controls.Add(BtnSearchText);
+            grpBoxSearch.Location = new Point(12, 12);
+            grpBoxSearch.Name = "grpBoxSearch";
+            grpBoxSearch.Size = new Size(411, 659);
+            grpBoxSearch.TabIndex = 7;
+            grpBoxSearch.TabStop = false;
             // 
             // label1
             // 
             label1.AutoSize = true;
-            label1.Location = new Point(6, 60);
+            label1.Location = new Point(9, 151);
             label1.Name = "label1";
-            label1.Size = new Size(46, 20);
-            label1.TabIndex = 1;
-            label1.Text = "From:";
+            label1.Size = new Size(99, 20);
+            label1.TabIndex = 5;
+            label1.Text = "Search Range";
             // 
-            // CmbFrom
+            // TvSearchRange
             // 
-            CmbFrom.FormattingEnabled = true;
-            CmbFrom.Location = new Point(58, 57);
-            CmbFrom.Name = "CmbFrom";
-            CmbFrom.Size = new Size(315, 28);
-            CmbFrom.TabIndex = 0;
+            TvSearchRange.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            TvSearchRange.CheckBoxes = true;
+            TvSearchRange.Location = new Point(9, 183);
+            TvSearchRange.Name = "TvSearchRange";
+            TvSearchRange.Size = new Size(390, 324);
+            TvSearchRange.TabIndex = 4;
+            TvSearchRange.AfterCheck += TvSearchRange_AfterCheck;
             // 
-            // RdBtnRamge
+            // grpBoxSearchResult
             // 
-            RdBtnRamge.AutoSize = true;
-            RdBtnRamge.Location = new Point(267, 47);
-            RdBtnRamge.Name = "RdBtnRamge";
-            RdBtnRamge.Size = new Size(124, 24);
-            RdBtnRamge.TabIndex = 8;
-            RdBtnRamge.TabStop = true;
-            RdBtnRamge.Text = " Range Search";
-            RdBtnRamge.UseVisualStyleBackColor = true;
-            RdBtnRamge.CheckedChanged += RdBtnRamge_CheckedChanged;
+            grpBoxSearchResult.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            grpBoxSearchResult.Controls.Add(dataGridViewResults);
+            grpBoxSearchResult.Controls.Add(BtnRetSearch);
+            grpBoxSearchResult.Location = new Point(12, 16);
+            grpBoxSearchResult.Name = "grpBoxSearchResult";
+            grpBoxSearchResult.Size = new Size(411, 679);
+            grpBoxSearchResult.TabIndex = 8;
+            grpBoxSearchResult.TabStop = false;
+            // 
+            // dataGridViewResults
+            // 
+            dataGridViewResults.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            dataGridViewResults.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
+            dataGridViewResults.Location = new Point(9, 88);
+            dataGridViewResults.Name = "dataGridViewResults";
+            dataGridViewResults.RowHeadersWidth = 51;
+            dataGridViewResults.Size = new Size(395, 585);
+            dataGridViewResults.TabIndex = 5;
+            dataGridViewResults.CellMouseDoubleClick += dataGridViewResults_CellMouseDoubleClick;
+            dataGridViewResults.CellPainting += dataGridViewResults_CellPainting;
+            // 
+            // BtnRetSearch
+            // 
+            BtnRetSearch.Font = new Font("0xProto Nerd Font", 7.79999971F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            BtnRetSearch.Location = new Point(6, 53);
+            BtnRetSearch.Name = "BtnRetSearch";
+            BtnRetSearch.Size = new Size(144, 29);
+            BtnRetSearch.TabIndex = 4;
+            BtnRetSearch.Text = "Return to Search";
+            BtnRetSearch.UseVisualStyleBackColor = true;
+            BtnRetSearch.Click += BtnRetSearch_Click;
             // 
             // SearchInPDFs
             // 
             AutoScaleDimensions = new SizeF(8F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(403, 707);
-            Controls.Add(RdBtnRamge);
-            Controls.Add(GbRange);
+            ClientSize = new Size(428, 707);
+            Controls.Add(grpBoxSearchResult);
+            Controls.Add(grpBoxSearch);
             Controls.Add(statusLabel);
-            Controls.Add(treeVwResult);
-            Controls.Add(BtnSearchText);
-            Controls.Add(chkCaseSensitive);
-            Controls.Add(chkWholeWord);
-            Controls.Add(txtSearchBox);
             Icon = (Icon)resources.GetObject("$this.Icon");
             Name = "SearchInPDFs";
             Text = "SearchInPDFs";
             FormClosing += SearchInPDFs_FormClosing;
-            GbRange.ResumeLayout(false);
-            GbRange.PerformLayout();
+            grpBoxSearch.ResumeLayout(false);
+            grpBoxSearch.PerformLayout();
+            grpBoxSearchResult.ResumeLayout(false);
+            ((System.ComponentModel.ISupportInitialize)dataGridViewResults).EndInit();
             ResumeLayout(false);
-            PerformLayout();
         }
 
         #endregion
@@ -225,14 +203,12 @@
         private CheckBox chkCaseSensitive;
         private Button BtnSearchText;
         private ToolTip toolTip1;
-        private TreeView treeVwResult;
         private Label statusLabel;
-        private GroupBox GbRange;
-        private ComboBox CmbTo;
-        private Label label2;
+        private GroupBox grpBoxSearch;
+        private GroupBox grpBoxSearchResult;
+        private Button BtnRetSearch;
         private Label label1;
-        private ComboBox CmbFrom;
-        private RadioButton RdBtnRamge;
-        private Button BtnClose;
+        private TreeView TvSearchRange;
+        private DataGridView dataGridViewResults;
     }
 }
