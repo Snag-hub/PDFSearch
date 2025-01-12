@@ -5,12 +5,19 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
+using System.Windows.Forms;
 
 namespace PDFSearch.Acrobat;
 
-internal class AcrobatWindowManager(string launchDirectory)
+internal class AcrobatWindowManager
 {
-    private readonly string _launchDirectory = launchDirectory;
+    private readonly string _launchDirectory = string.Empty;
+
+    public AcrobatWindowManager(string launchDirectory)
+    {
+        _launchDirectory = launchDirectory;
+    }
+
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     public static extern bool EnumWindows(EnumWindowsProc enumProc, IntPtr lParam);
 
@@ -26,15 +33,22 @@ internal class AcrobatWindowManager(string launchDirectory)
     [DllImport("user32.dll")]
     public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
 
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
     public IntPtr acrobatHandle = IntPtr.Zero;
+
     // EnumWindows callback
     public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    // Constants for ShowWindow
+    private const int SW_SHOWMAXIMIZED = 3;
 
     public void FindOrLaunchAcrobatWindow()
     {
         try
         {
-            //EnsureAcrobatClosed(); // Ensure that Acrobat is not running before launching
+            // EnsureAcrobatClosed(); // Ensure that Acrobat is not running before launching
 
             // Check if Acrobat process is running
             var acrobatProcess = Process.GetProcessesByName("Acrobat").FirstOrDefault();
@@ -101,8 +115,6 @@ internal class AcrobatWindowManager(string launchDirectory)
                 }
             }
 
-
-
             // Find the Acrobat window
             EnumWindows((hWnd, lParam) =>
             {
@@ -112,6 +124,8 @@ internal class AcrobatWindowManager(string launchDirectory)
                 if (windowText.ToString().Contains("Adobe Acrobat") || windowText.ToString().Contains("Acrobat"))
                 {
                     acrobatHandle = hWnd;
+                    // Maximize the Acrobat window
+                    ShowWindow(acrobatHandle, SW_SHOWMAXIMIZED);
                     return false; // Stop further enumeration
                 }
 
@@ -124,7 +138,6 @@ internal class AcrobatWindowManager(string launchDirectory)
         }
     }
 
-    
     public void EnsureAcrobatClosed()
     {
         foreach (var process in Process.GetProcessesByName("Acrobat"))

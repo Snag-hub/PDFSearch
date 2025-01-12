@@ -189,6 +189,7 @@
             Name = "SearchInPDFs";
             Text = "SearchInPDFs";
             FormClosing += SearchInPDFs_FormClosing;
+            Resize += SearchInPDFs_Resize;
             grpBoxSearch.ResumeLayout(false);
             grpBoxSearch.PerformLayout();
             grpBoxSearchResult.ResumeLayout(false);

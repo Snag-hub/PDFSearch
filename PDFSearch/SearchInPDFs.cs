@@ -2,6 +2,8 @@
 using PDFSearch.Utilities;
 using PDFSearch.Acrobat;
 using System.Configuration;
+using System.Runtime.InteropServices;
+using System.Text;
 
 namespace PDFSearch;
 
@@ -14,10 +16,27 @@ public partial class SearchInPDFs : Form
     // make object of lucene searcher
     private readonly LuceneSearcher LuceneSearcher = new();
 
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    public static extern bool EnumWindows(EnumWindowsProc enumProc, IntPtr lParam);
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+    [DllImport("user32.dll")]
+    public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+    private const int SW_SHOWMAXIMIZED = 3;
+    private const uint SWP_NOZORDER = 0x0004;
+    private const uint SWP_SHOWWINDOW = 0x0040;
+
+    // Static reference to keep track of the instance
+    private static SearchInPDFs instance;
 
     public SearchInPDFs(string launchDirectory)
     {
+
         _launchDirectory = launchDirectory;
+
         InitializeComponent();
         InitializeDataGridView();
 
@@ -39,9 +58,13 @@ public partial class SearchInPDFs : Form
 
         // Add form load event handler
         this.Load += SearchInPDFs_Load;
-        this.Load += async (s, e) => await ProcessIndexingInBackground();
+        //this.Load += async (s, e) => await ProcessIndexingInBackground();
         TvSearchRange.AfterCheck += TvSearchRange_AfterCheck;
+
+        instance = this;
     }
+
+    public static SearchInPDFs Instance => instance;
 
     private void InitializeDataGridView()
     {
@@ -577,6 +600,8 @@ public partial class SearchInPDFs : Form
 
     private void SearchInPDFs_FormClosing(object sender, FormClosingEventArgs e)
     {
+        PopupForm popupForm = new(_launchDirectory);
+        popupForm.Close();
         acrobatWindowManager.EnsureAcrobatClosed();
     }
 
@@ -584,9 +609,23 @@ public partial class SearchInPDFs : Form
     {
         try
         {
-            acrobatWindowManager.FindOrLaunchAcrobatWindow();  // This method will now set the acrobatHandle
+            // Find the Acrobat window
+            IntPtr acrobatHandle = IntPtr.Zero;
+            EnumWindows((hWnd, lParam) =>
+            {
+                StringBuilder windowText = new StringBuilder(256);
+                GetWindowText(hWnd, windowText, windowText.Capacity);
 
-            if (acrobatWindowManager.acrobatHandle != IntPtr.Zero)
+                if (windowText.ToString().Contains("Adobe Acrobat") || windowText.ToString().Contains("Acrobat"))
+                {
+                    acrobatHandle = hWnd;
+                    return false; // Stop further enumeration
+                }
+
+                return true;
+            }, IntPtr.Zero);
+
+            if (acrobatHandle != IntPtr.Zero)
             {
                 // Get screen dimensions
                 int screenWidth = Screen.PrimaryScreen.WorkingArea.Width;
@@ -604,7 +643,7 @@ public partial class SearchInPDFs : Form
                 AcrobatWindowManager.SetWindowPos(this.Handle, IntPtr.Zero, 0, 0, yourAppWidth, screenHeight, flags);
 
                 // Position Acrobat (right side)
-                AcrobatWindowManager.SetWindowPos(acrobatWindowManager.acrobatHandle, IntPtr.Zero, yourAppWidth, 0, acrobatWidth, screenHeight, flags);
+                AcrobatWindowManager.SetWindowPos(acrobatHandle, IntPtr.Zero, yourAppWidth, 0, acrobatWidth, screenHeight, flags);
             }
             else
             {
@@ -616,6 +655,7 @@ public partial class SearchInPDFs : Form
             MessageBox.Show($"Error arranging windows: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
+
 
 
     private void BindFromToCombos()
@@ -729,6 +769,20 @@ public partial class SearchInPDFs : Form
         catch (Exception ex)
         {
             MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private void SearchInPDFs_Resize(object sender, EventArgs e)
+    {
+        if (this.WindowState == FormWindowState.Minimized)
+        {
+            // Restore the existing PopupForm if it's minimized
+            if (PopupForm.Instance != null && PopupForm.Instance.WindowState == FormWindowState.Minimized)
+            {
+                PopupForm.Instance.WindowState = FormWindowState.Normal;
+                PopupForm.Instance.BringToFront();
+                acrobatWindowManager.FindOrLaunchAcrobatWindow();
+            }
         }
     }
 

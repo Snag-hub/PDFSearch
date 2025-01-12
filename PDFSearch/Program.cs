@@ -25,7 +25,7 @@ internal static class Program
 
             //MessageBox.Show($"Opening location in Directory: {folderPath}", "Checking location", MessageBoxButtons.OK, MessageBoxIcon.Information);
             Console.WriteLine($"Opening location: {folderPath}");
-            Application.Run(new SearchInPDFs(folderPath));
+            Application.Run(new PopupForm(folderPath));
 
         }
         else
