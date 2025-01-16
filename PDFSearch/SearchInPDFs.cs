@@ -374,56 +374,53 @@ public partial class SearchInPDFs : Form
                 return;
             }
 
-            ShowHideResultGroupBox();
-
-
             // Perform the search in the _launchDirectory
             var results = LuceneSearcher.SearchInDirectory(searchTerm, _launchDirectory, MatchWord, MatchCase, filePath);
 
             // Filter the results based on the selected directories
             var filteredResults = results.Where(r => selectedDirectories.Any(d => r.FilePath.StartsWith(d, StringComparison.OrdinalIgnoreCase))).ToList();
 
-            if (filteredResults.Count > 0)
-            {
-                foreach (var result in filteredResults)
-                {
-                    // Get the full file path and relative path
-                    string fullPath = result.FilePath;
-                    string relativePath = result.RelativePath;
-
-                    // Split the full path and relative path into segments
-                    string[] splitFullPath = fullPath.Split(Path.DirectorySeparatorChar);
-                    string[] splitRelativePath = relativePath.Split(@"\");
-
-                    // Find the start index of the relative path in the full path
-                    // The fleet name is the last segment of the full path before the vessel starts
-                    int vesselIndexInFullPath = Array.IndexOf(splitFullPath, splitRelativePath[0]);
-
-                    // Extract fleet as the last segment before the vessel starts in the relative path
-                    string fleet = vesselIndexInFullPath >= 0
-                        ? splitFullPath[vesselIndexInFullPath - 1]
-                        : string.Empty;
-
-                    // Extract vessel, part, and manual from the relative path
-                    string vessel = splitRelativePath.Length > 0 ? splitRelativePath[0] : string.Empty; // First part of the relative path
-                    string part = splitRelativePath.Length > 1 ? splitRelativePath[1] : string.Empty;   // Second part of the relative path
-                    string manual = Path.GetFileNameWithoutExtension(relativePath); // The file name without extension
-
-                    // Format the page number and snippet
-                    string pageNoWithContent = result.PageNumber > 0 ? $"Page {result.PageNumber}: {result.Snippet}" : result.Snippet;
-
-                    // Add the data to the DataGridView
-                    dataGridViewResults.Rows.Add(fleet, string.Empty, vessel, part, manual, pageNoWithContent, fullPath, result.PageNumber);
-                }
-
-                // Auto resize the columns to fit the content
-                dataGridViewResults.AutoResizeColumns();
-            }
-
-            else
+            if (filteredResults.Count <= 0)
             {
                 MessageBox.Show("No results found.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
+
+            ShowHideResultGroupBox();
+            foreach (var result in filteredResults)
+            {
+                // Get the full file path and relative path
+                string fullPath = result.FilePath;
+                string relativePath = result.RelativePath;
+
+                // Split the full path and relative path into segments
+                string[] splitFullPath = fullPath.Split(Path.DirectorySeparatorChar);
+                string[] splitRelativePath = relativePath.Split(@"\");
+
+                // Find the start index of the relative path in the full path
+                // The fleet name is the last segment of the full path before the vessel starts
+                int vesselIndexInFullPath = Array.IndexOf(splitFullPath, splitRelativePath[0]);
+
+                // Extract fleet as the last segment before the vessel starts in the relative path
+                string fleet = vesselIndexInFullPath >= 0
+                    ? splitFullPath[vesselIndexInFullPath - 1]
+                    : string.Empty;
+
+                // Extract vessel, part, and manual from the relative path
+                string vessel = splitRelativePath.Length > 0 ? splitRelativePath[0] : string.Empty; // First part of the relative path
+                string part = splitRelativePath.Length > 1 ? splitRelativePath[1] : string.Empty;   // Second part of the relative path
+                string manual = Path.GetFileNameWithoutExtension(relativePath); // The file name without extension
+
+                // Format the page number and snippet
+                string pageNoWithContent = result.PageNumber > 0 ? $"Page {result.PageNumber}: {result.Snippet}" : result.Snippet;
+
+                // Add the data to the DataGridView
+                dataGridViewResults.Rows.Add(fleet, string.Empty, vessel, part, manual, pageNoWithContent, fullPath, result.PageNumber);
+            }
+
+            // Auto resize the columns to fit the content
+            dataGridViewResults.AutoResizeColumns();
+
+
         }
         catch (Exception ex)
         {
