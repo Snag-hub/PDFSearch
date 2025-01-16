@@ -43,7 +43,7 @@ public static class FolderManager
         if (!File.Exists(JsonFilePath))
         {
             Console.WriteLine("Folder structure file not found.");
-            return new List<string>();
+            return [];
         }
 
         // Read and deserialize JSON

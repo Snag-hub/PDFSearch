@@ -1,8 +1,7 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
+using System.IO;
 using System.Text.Json;
-using System.Threading.Tasks;
+using PDFSearch.Utilities;
 
 namespace PDFSearch;
 
@@ -11,7 +10,8 @@ public class ConfigManager
     public string StartFile { get; set; }
     public string PdfOpener { get; set; }
 
-    private static string ConfigFilePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "No1Knows", "config.json");
+    // Path to the config file, stored in the same base path as FolderManager
+    private static string ConfigFilePath => Path.Combine(FolderUtility.BasePath, "config.json");
 
     // Load the configuration from the file
     public static ConfigManager LoadConfig()
@@ -30,12 +30,13 @@ public class ConfigManager
     // Save the configuration to the file
     public void SaveConfig()
     {
+        // Ensure the base directory exists
+        FolderUtility.EnsureBasePathExists();
+
+        // Serialize the configuration to JSON
         string json = JsonSerializer.Serialize(this);
-        string directory = Path.GetDirectoryName(ConfigFilePath);
-        if (!Directory.Exists(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
+
+        // Write the JSON to the config file
         File.WriteAllText(ConfigFilePath, json);
     }
 

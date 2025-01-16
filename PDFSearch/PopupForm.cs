@@ -56,8 +56,8 @@ public partial class PopupForm : Form
             AutoSize = false,
             TextAlign = System.Drawing.ContentAlignment.MiddleCenter,
             Dock = DockStyle.Fill,
-            ForeColor = System.Drawing.Color.White,
-            Font = new System.Drawing.Font("Arial", 9, System.Drawing.FontStyle.Regular)
+            ForeColor = System.Drawing.Color.Black,
+            Font = new System.Drawing.Font("Arial", 8, System.Drawing.FontStyle.Regular)
         };
         overlayPanel.Controls.Add(loadingLabel);
 
@@ -234,7 +234,7 @@ public partial class PopupForm : Form
         }
     }
 
-    private Dictionary<string, string> GetInstalledPDFReaders()
+    private static Dictionary<string, string> GetInstalledPDFReaders()
     {
         var pdfReaders = new Dictionary<string, string>();
 
@@ -253,6 +253,18 @@ public partial class PopupForm : Form
             if (File.Exists(acrobatDCPath))
             {
                 pdfReaders.Add("Adobe Acrobat Reader DC", acrobatDCPath);
+            }
+
+            string acrobatDC2Path = Path.Combine(programFilesPath, @"Adobe\Acrobat DC\Acrobat\Acrobat.exe");
+            if (File.Exists(acrobatDC2Path))
+            {
+                pdfReaders.Add("Adobe Acrobat Reader", acrobatDC2Path);
+            }
+
+            string acrobat10Path = Path.Combine(programFilesPath, @"Adobe\Acrobat 10.0\Acrobat\AcroRd32.exe");
+            if (File.Exists(acrobat10Path))
+            {
+                pdfReaders.Add("Adobe Acrobat Reader DC", acrobat10Path);
             }
 
             // Check for Adobe Acrobat Reader 2023
