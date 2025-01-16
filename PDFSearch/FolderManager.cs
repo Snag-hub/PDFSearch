@@ -3,20 +3,18 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using PDFSearch.Utilities;
 
 namespace PDFSearch;
 
 public static class FolderManager
 {
-    private static readonly string JsonFilePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "No1Knows",
-        "FolderStructure.json"
-    );
+    // Path to the folder structure JSON file, stored in the same base path as LuceneIndexer
+    private static readonly string JsonFilePath = Path.Combine(FolderUtility.BasePath, "FolderStructure.json");
 
     static FolderManager()
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(JsonFilePath) ?? string.Empty);
+        FolderUtility.EnsureBasePathExists();
     }
 
     // Save folder structure to JSON file
@@ -28,10 +26,12 @@ public static class FolderManager
             return;
         }
 
+        // Get the folder structure from the root path
         var folderStructure = Directory.GetDirectories(rootPath, "*", SearchOption.AllDirectories)
                                        .OrderBy(dir => dir)
                                        .ToList();
 
+        // Serialize to JSON and save to file
         var json = JsonSerializer.Serialize(folderStructure);
         File.WriteAllText(JsonFilePath, json);
         Console.WriteLine("Folder structure saved.");
@@ -43,11 +43,12 @@ public static class FolderManager
         if (!File.Exists(JsonFilePath))
         {
             Console.WriteLine("Folder structure file not found.");
-            return [];
+            return new List<string>();
         }
 
+        // Read and deserialize JSON
         var json = File.ReadAllText(JsonFilePath);
-        return JsonSerializer.Deserialize<List<string>>(json) ?? [];
+        return JsonSerializer.Deserialize<List<string>>(json) ?? new List<string>();
     }
 
     // Display folder structure

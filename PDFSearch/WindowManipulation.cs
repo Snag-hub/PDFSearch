@@ -24,81 +24,48 @@ public class PdfOpener
     {
         try
         {
-            //const string adobeReaderPath = @"C:\Program Files (x86)\Adobe\Acrobat 10.0\Acrobat\Acrobat.exe"; // Path to Adobe Acrobat Pro
-            const string adobeReaderPath = @"C:\Program Files\Adobe\Acrobat DC\Acrobat\Acrobat.exe";
-            var arguments = $"/A \"page={pageNumber}\" \"{filePath}\""; // Open specific page
-
-            IntPtr acrobatHandle = IntPtr.Zero;
-            var existingProcesses = Process.GetProcessesByName("Acrobat");
-
-            if (existingProcesses.Length > 0)
+            // Define the common paths for Adobe Acrobat or Reader
+            string[] possiblePaths =
             {
-                // Acrobat Pro is already running, reuse the existing instance
-                acrobatHandle = existingProcesses[1].MainWindowHandle;
+                @"C:\Program Files (x86)\Adobe\Acrobat DC\Acrobat\Acrobat.exe",
+                @"C:\Program Files\Adobe\Acrobat DC\Acrobat\Acrobat.exe",
+                @"C:\Program Files (x86)\Adobe\Reader DC\Reader\AcroRd32.exe",
+                @"C:\Program Files\Adobe\Reader DC\Reader\AcroRd32.exe"
+            };
 
-                // Open the specified file and page in the already running instance
-                Process.Start(adobeReaderPath, arguments);
-            }
-            else if (File.Exists(adobeReaderPath))
+            // Find the first valid path
+            string adobeReaderPath = possiblePaths.FirstOrDefault(File.Exists);
+            if (adobeReaderPath == null)
             {
-                // Start a new Acrobat Pro process
-                var process = Process.Start(adobeReaderPath, arguments);
-                if (process != null)
-                {
-                    int retries = 10;
-                    while (retries > 0 && acrobatHandle == IntPtr.Zero)
-                    {
-                        Thread.Sleep(500); // Wait for the process to initialize
-                        acrobatHandle = process.MainWindowHandle;
-                        retries--;
-                    }
-                }
-            }
-            else
-            {
-                // Fallback if Acrobat Pro is not found (open with the default PDF viewer)
-                Process.Start(filePath);
+                MessageBox.Show("Adobe Acrobat or Reader is not installed.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
-            //// Proceed with window manipulation if a valid handle is found
-            //if (acrobatHandle != IntPtr.Zero)
-            //{
-            //    // Get the current form's size and position
-            //    var form = Application.OpenForms.Count > 0 ? Application.OpenForms[0] : null;
+            // Build the command-line arguments to open the file at a specific page
+            string arguments = $"/A \"page={pageNumber}\" \"{filePath}\"";
 
-            //    if (form != null)
-            //    {
-            //        int formWidth = form.Width;
-            //        int formHeight = form.Height;
-            //        int formLeft = form.Left;
-            //        int formTop = form.Top;
-
-            //        // Set Acrobat's size and position
-            //        int acrobatWidth = 800;  // Adjust as needed
-            //        int acrobatHeight = formHeight;  // Match the height of the form
-            //        int acrobatLeft = formLeft + formWidth;  // Place it next to the form
-            //        int acrobatTop = formTop;
-
-            //        // Move Acrobat window to position beside the form
-            //        WindowManipulation.SetWindowPos(
-            //            acrobatHandle,
-            //            IntPtr.Zero,
-            //            acrobatLeft,
-            //            acrobatTop,
-            //            acrobatWidth,
-            //            acrobatHeight,
-            //            WindowManipulation.SWP_NOZORDER | WindowManipulation.SWP_NOACTIVATE);
-            //    }
-            //}
-            //else
-            //{
-            //    MessageBox.Show("Unable to find Acrobat window.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            //}
+            // Check for running instances of Acrobat or Reader
+            var existingProcesses = Process.GetProcessesByName(Path.GetFileNameWithoutExtension(adobeReaderPath));
+            if (existingProcesses.Length > 0)
+            {
+                // An instance of Acrobat/Reader is already running, send the command-line arguments
+                Process.Start(adobeReaderPath, arguments);
+            }
+            else
+            {
+                // Start a new instance of Acrobat/Reader
+                var process = Process.Start(adobeReaderPath, arguments);
+                if (process == null)
+                {
+                    MessageBox.Show("Failed to start Adobe Acrobat/Reader.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+            }
         }
         catch (Exception ex)
         {
             MessageBox.Show($"Error opening PDF: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
+
 }

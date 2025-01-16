@@ -23,6 +23,20 @@ namespace PDFSearch
 
             acrobatWindowManager = new AcrobatWindowManager(folderPath);
 
+            // Check if configuration exists
+            ConfigManager config = ConfigManager.LoadConfig();
+
+            if (config == null)
+            {
+                // If no config, show the first-time setup
+                ShowFirstTimeSetup();
+            }
+            //else
+            //{
+            //    // Use existing configuration
+            //    MessageBox.Show($"Start File: {config.StartFile}\nPDF Opener: {config.PdfOpener}");
+            //}
+
             // Prevent the form from being maximized
             this.FormBorderStyle = FormBorderStyle.FixedSingle; // or FormBorderStyle.FixedDialog
             this.MaximizeBox = false;
@@ -55,13 +69,17 @@ namespace PDFSearch
 
         private void BtnLaunchSearch_Click(object sender, EventArgs e)
         {
-            if (this.WindowState == FormWindowState.Minimized)
+            if (SearchInPDFs.Instance is not null)
             {
-                // Restore the existing PopupForm if it's minimized
-                if (SearchInPDFs.Instance != null && SearchInPDFs.Instance.WindowState == FormWindowState.Minimized)
+                if (SearchInPDFs.Instance.WindowState == FormWindowState.Minimized)
                 {
-                    SearchInPDFs.Instance.WindowState = FormWindowState.Normal;
-                    SearchInPDFs.Instance.BringToFront();
+                    // Restore the existing PopupForm if it's minimized
+                    if (SearchInPDFs.Instance != null && SearchInPDFs.Instance.WindowState == FormWindowState.Minimized)
+                    {
+                        SearchInPDFs.Instance.WindowState = FormWindowState.Normal;
+                        this.WindowState = FormWindowState.Minimized;
+                        SearchInPDFs.Instance.BringToFront();
+                    }
                 }
             }
             else
@@ -129,17 +147,38 @@ namespace PDFSearch
             }
         }
 
-        //private void PopupForm_Resize(object sender, EventArgs e)
-        //{
-        //    if (this.WindowState == FormWindowState.Minimized)
-        //    {
-        //        // Restore the existing PopupForm if it's minimized
-        //        if (SearchInPDFs.Instance != null && SearchInPDFs.Instance.WindowState == FormWindowState.Minimized)
-        //        {
-        //            SearchInPDFs.Instance.WindowState = FormWindowState.Normal;
-        //            SearchInPDFs.Instance.BringToFront();
-        //        }
-        //    }
-        //}
+        private void ShowFirstTimeSetup()
+        {
+            // Show file dialog for index.pdf
+            OpenFileDialog openFileDialog = new()
+            {
+                Filter = "PDF Files|*.pdf",
+                Title = "Select the Start File (index.pdf)"
+            };
+
+            if (openFileDialog.ShowDialog() == DialogResult.OK)
+            {
+                string startFile = openFileDialog.FileName;
+
+                // Ask user to choose PDF opener
+                FolderBrowserDialog folderDialog = new();
+                folderDialog.Description = "Select the folder where your PDF Opener is located (e.g., Adobe Acrobat Reader folder)";
+                if (folderDialog.ShowDialog() == DialogResult.OK)
+                {
+                    string pdfOpener = Path.Combine(folderDialog.SelectedPath, "AcroRd32.exe");  // Default name for Adobe Reader executable
+
+                    // Save the config
+                    ConfigManager config = new()
+                    {
+                        StartFile = startFile,
+                        PdfOpener = pdfOpener
+                    };
+
+                    config.SaveConfig();
+
+                    MessageBox.Show("Configuration saved successfully!");
+                }
+            }
+        }
     }
 }

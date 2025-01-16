@@ -5,27 +5,22 @@ using Lucene.Net.Search;
 using Lucene.Net.Store;
 using System;
 using System.Collections.Generic;
-using Directory = System.IO.Directory;
+using System.IO;
 using System.Text;
+using Directory = System.IO.Directory;
 
 namespace PDFSearch.Utilities;
 
 public class LuceneSearcher
-{    // Generate a unique index folder name for each directory
-    private static string GetIndexFolderName(string folderPath)
-    {
-        using var sha256 = System.Security.Cryptography.SHA256.Create();
-        var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(folderPath));
-        return BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
-    }
-
+{
+    // Use FolderUtility to generate the base path and hashed folder names
     public List<SearchResult> SearchInDirectory(string queryText, string folderPath, string? filePath = null)
     {
         try
         {
-            // Use folderPath for the base index path
-            string baseIndexPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "No1Knows", "Index");
-            string uniqueIndexPath = Path.Combine(baseIndexPath, GetIndexFolderName(folderPath));
+            // Get the unique index path using FolderUtility
+            FolderUtility.EnsureBasePathExists();
+            string uniqueIndexPath = FolderUtility.GetFolderForPath(folderPath);
 
             // Check if the index directory exists
             if (!Directory.Exists(uniqueIndexPath))

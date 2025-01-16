@@ -40,19 +40,7 @@ public partial class SearchInPDFs : Form
         InitializeComponent();
         InitializeDataGridView();
 
-        // Check if configuration exists
-        ConfigManager config = ConfigManager.LoadConfig();
-
-        if (config == null)
-        {
-            // If no config, show the first-time setup
-            ShowFirstTimeSetup();
-        }
-        else
-        {
-            // Use existing configuration
-            MessageBox.Show($"Start File: {config.StartFile}\nPDF Opener: {config.PdfOpener}");
-        }
+        
 
         acrobatWindowManager = new AcrobatWindowManager(_launchDirectory);
 
@@ -83,42 +71,18 @@ public partial class SearchInPDFs : Form
             Visible = false // Hide the FullPath column
         };
         dataGridViewResults.Columns.Add(fullPathColumn);
-    }
 
-
-    private void ShowFirstTimeSetup()
-    {
-        // Show file dialog for index.pdf
-        OpenFileDialog openFileDialog = new OpenFileDialog
+        var pageNo = new DataGridViewTextBoxColumn
         {
-            Filter = "PDF Files|*.pdf",
-            Title = "Select the Start File (index.pdf)"
+            Name = "PageNo",
+            HeaderText = "PageNo",
+            Visible = false
         };
-
-        if (openFileDialog.ShowDialog() == DialogResult.OK)
-        {
-            string startFile = openFileDialog.FileName;
-
-            // Ask user to choose PDF opener
-            FolderBrowserDialog folderDialog = new();
-            folderDialog.Description = "Select the folder where your PDF Opener is located (e.g., Adobe Acrobat Reader folder)";
-            if (folderDialog.ShowDialog() == DialogResult.OK)
-            {
-                string pdfOpener = Path.Combine(folderDialog.SelectedPath, "AcroRd32.exe");  // Default name for Adobe Reader executable
-
-                // Save the config
-                ConfigManager config = new()
-                {
-                    StartFile = startFile,
-                    PdfOpener = pdfOpener
-                };
-
-                config.SaveConfig();
-
-                MessageBox.Show("Configuration saved successfully!");
-            }
-        }
+        dataGridViewResults.Columns.Add(pageNo);
     }
+
+
+    
 
     private void SearchInPDFs_Load(object sender, EventArgs e)
     {
@@ -370,6 +334,8 @@ public partial class SearchInPDFs : Form
 
     private void BtnSearchText_Click(object sender, EventArgs e)
     {
+        bool MatchWord = false;
+        bool MatchCase = false;
         string? filePath = null;
 
         try
@@ -399,20 +365,39 @@ public partial class SearchInPDFs : Form
             {
                 foreach (var result in filteredResults)
                 {
+                    // Get the full file path and relative path
                     string fullPath = result.FilePath;
-                    string[] splitPath = fullPath.Split(Path.DirectorySeparatorChar);
-                    string fleet = splitPath.Length > 3 ? splitPath[3] : string.Empty;
-                    string vessel = splitPath.Length > 4 ? splitPath[4] : string.Empty;
-                    string part = splitPath.Length > 5 ? splitPath[5] : string.Empty;
-                    string manual = Path.GetFileNameWithoutExtension(fullPath);
+                    string relativePath = result.RelativePath;
 
+                    // Split the full path and relative path into segments
+                    string[] splitFullPath = fullPath.Split(Path.DirectorySeparatorChar);
+                    string[] splitRelativePath = relativePath.Split(@"\");
+
+                    // Find the start index of the relative path in the full path
+                    // The fleet name is the last segment of the full path before the vessel starts
+                    int vesselIndexInFullPath = Array.IndexOf(splitFullPath, splitRelativePath[0]);
+
+                    // Extract fleet as the last segment before the vessel starts in the relative path
+                    string fleet = vesselIndexInFullPath >= 0
+                        ? splitFullPath[vesselIndexInFullPath - 1]
+                        : string.Empty;
+
+                    // Extract vessel, part, and manual from the relative path
+                    string vessel = splitRelativePath.Length > 0 ? splitRelativePath[0] : string.Empty; // First part of the relative path
+                    string part = splitRelativePath.Length > 1 ? splitRelativePath[1] : string.Empty;   // Second part of the relative path
+                    string manual = Path.GetFileNameWithoutExtension(relativePath); // The file name without extension
+
+                    // Format the page number and snippet
                     string pageNoWithContent = result.PageNumber > 0 ? $"Page {result.PageNumber}: {result.Snippet}" : result.Snippet;
 
-                    dataGridViewResults.Rows.Add(fleet, string.Empty, vessel, part, manual, pageNoWithContent, fullPath);
+                    // Add the data to the DataGridView
+                    dataGridViewResults.Rows.Add(fleet, string.Empty, vessel, part, manual, pageNoWithContent, fullPath, result.PageNumber);
                 }
 
+                // Auto resize the columns to fit the content
                 dataGridViewResults.AutoResizeColumns();
             }
+
             else
             {
                 MessageBox.Show("No results found.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -745,13 +730,12 @@ public partial class SearchInPDFs : Form
                 // Get the full path from the hidden FullPath column
                 var selectedRow = dataGridViewResults.Rows[e.RowIndex];
                 var fullPath = selectedRow.Cells["FullPath"].Value?.ToString();
+                var PageNo = selectedRow.Cells["PageNo"].Value?.ToString();
+
 
                 if (!string.IsNullOrEmpty(fullPath))
                 {
-                    // Assuming you have a method to open PDF at a specific page
-                    // You might need to store additional information like page number in a hidden column or elsewhere
-                    // For simplicity, I'm using page number 0 here
-                    int pageNumber = 0;
+                    int pageNumber = Convert.ToInt32(PageNo);
 
                     // Open the PDF at the specific page
                     PdfOpener.OpenPdfAtPage(fullPath, pageNumber);

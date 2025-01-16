@@ -4,33 +4,25 @@ using Lucene.Net.Index;
 using Lucene.Net.Store;
 using System.Text.Json;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
-using System.Xml;
 using Directory = System.IO.Directory;
-using System.Collections.Concurrent;
 
 namespace PDFSearch.Utilities;
 
 public static class LuceneIndexer
 {
-    // Define a base path for storing application-specific data in AppData
-    private static readonly string AppDataBasePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "No1Knows",
-        "Index"
-    );
-
     // Metadata file path to store information about indexed files
-    private static readonly string MetadataFilePath = Path.Combine(AppDataBasePath, "indexedFiles.json");
+    private static readonly string MetadataFilePath = Path.Combine(FolderUtility.BasePath, "indexedFiles.json");
 
     // Ensure the base path exists when the application starts
     static LuceneIndexer()
     {
-        Directory.CreateDirectory(AppDataBasePath);
+        FolderUtility.EnsureBasePathExists();
     }
 
     // Load metadata from the file to track indexed files
@@ -50,16 +42,8 @@ public static class LuceneIndexer
         var json = JsonSerializer.Serialize(metadata);
 
         // Ensure the directory exists before saving
-        Directory.CreateDirectory(AppDataBasePath);
+        FolderUtility.EnsureBasePathExists();
         File.WriteAllText(MetadataFilePath, json);
-    }
-
-    // Generate a unique index folder name for each directory
-    private static string GetIndexFolderName(string folderPath)
-    {
-        using var sha256 = SHA256.Create();
-        var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(folderPath));
-        return BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
     }
 
     // Index files in a specific folder
@@ -68,8 +52,8 @@ public static class LuceneIndexer
         if (!Directory.Exists(folderPath))
             throw new DirectoryNotFoundException($"The folder '{folderPath}' does not exist.");
 
-        // Create an index folder based on the folder path within AppData
-        string uniqueIndexPath = Path.Combine(AppDataBasePath, GetIndexFolderName(folderPath));
+        // Use FolderUtility to get a unique index folder path
+        string uniqueIndexPath = FolderUtility.GetFolderForPath(folderPath);
         Directory.CreateDirectory(uniqueIndexPath);
 
         var metadata = LoadMetadata();
@@ -99,15 +83,19 @@ public static class LuceneIndexer
 
                 var textByPage = PdfHelper.ExtractTextFromPdfPages(pdfFile);
 
+                // Calculate the relative path
+                string relativePath = Path.GetRelativePath(folderPath, pdfFile);
+
                 // Batch Lucene documents
                 var docs = new List<Document>();
                 foreach (var (page, text) in textByPage)
                 {
                     var doc = new Document
                     {
-                        new StringField("FilePath", pdfFile, Field.Store.YES),
-                        new Int32Field("PageNumber", page, Field.Store.YES),
-                        new TextField("Content", text, Field.Store.YES)
+                        new StringField("FilePath", pdfFile, Field.Store.YES),      // Absolute file path
+                        new StringField("RelativePath", relativePath, Field.Store.YES), // Relative file path
+                        new Int32Field("PageNumber", page, Field.Store.YES),       // Page number
+                        new TextField("Content", text, Field.Store.YES)           // PDF content
                     };
                     docs.Add(doc);
                 }
@@ -145,10 +133,7 @@ public static class LuceneIndexer
     // Clean all existing indexes and metadata
     public static void CleanAllIndexes()
     {
-        if (Directory.Exists(AppDataBasePath))
-        {
-            Directory.Delete(AppDataBasePath, recursive: true);
-            Console.WriteLine("All indexes have been cleaned.");
-        }
+        FolderUtility.CleanAllFolders();
+        Console.WriteLine("All indexes have been cleaned.");
     }
 }
