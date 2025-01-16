@@ -40,7 +40,11 @@ public partial class SearchInPDFs : Form
         InitializeComponent();
         InitializeDataGridView();
 
-        
+        // Enable KeyPreview for the form
+        this.KeyPreview = true;
+
+        // Subscribe to the KeyPress event for the form
+        this.KeyPress += BtnSearchText_KeyPress;
 
         acrobatWindowManager = new AcrobatWindowManager(_launchDirectory);
 
@@ -82,10 +86,11 @@ public partial class SearchInPDFs : Form
     }
 
 
-    
+
 
     private void SearchInPDFs_Load(object sender, EventArgs e)
     {
+        txtSearchBox.Focus();
         List<string> folderStructure = FolderManager.LoadFolderStructure(); if (folderStructure.Count == 0)
         {
             FolderManager.SaveFolderStructure(_launchDirectory);
@@ -338,6 +343,15 @@ public partial class SearchInPDFs : Form
         bool MatchCase = false;
         string? filePath = null;
 
+        if (chkCaseSensitive.Checked)
+        {
+            MatchCase = true;
+        }
+        if (chkWholeWord.Checked)
+        {
+            MatchWord = true;
+        }
+
         try
         {
             // Clear previous results in the DataGridView
@@ -350,13 +364,21 @@ public partial class SearchInPDFs : Form
                 return;
             }
 
-            ShowHideResultGroupBox();
-
             // Get selected directories from the TreeView
             List<string> selectedDirectories = GetSelectedDirectories(TvSearchRange.Nodes);
 
+            // Check if at least one node or child node is selected
+            if (selectedDirectories.Count == 0)
+            {
+                MessageBox.Show("Please select at least one node or child node in the Search Range.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            ShowHideResultGroupBox();
+
+
             // Perform the search in the _launchDirectory
-            var results = LuceneSearcher.SearchInDirectory(searchTerm, _launchDirectory, filePath);
+            var results = LuceneSearcher.SearchInDirectory(searchTerm, _launchDirectory, MatchWord, MatchCase, filePath);
 
             // Filter the results based on the selected directories
             var filteredResults = results.Where(r => selectedDirectories.Any(d => r.FilePath.StartsWith(d, StringComparison.OrdinalIgnoreCase))).ToList();
@@ -769,5 +791,4 @@ public partial class SearchInPDFs : Form
             }
         }
     }
-
 }

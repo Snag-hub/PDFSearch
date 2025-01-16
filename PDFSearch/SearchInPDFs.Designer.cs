@@ -67,6 +67,7 @@
             // chkWholeWord
             // 
             chkWholeWord.AutoSize = true;
+            chkWholeWord.FlatAppearance.BorderSize = 0;
             chkWholeWord.Font = new Font("0xProto Nerd Font", 7.79999971F, FontStyle.Regular, GraphicsUnit.Point, 0);
             chkWholeWord.Location = new Point(9, 91);
             chkWholeWord.Name = "chkWholeWord";
@@ -78,6 +79,7 @@
             // chkCaseSensitive
             // 
             chkCaseSensitive.AutoSize = true;
+            chkCaseSensitive.FlatAppearance.BorderSize = 0;
             chkCaseSensitive.Font = new Font("0xProto Nerd Font", 7.79999971F, FontStyle.Regular, GraphicsUnit.Point, 0);
             chkCaseSensitive.Location = new Point(9, 120);
             chkCaseSensitive.Name = "chkCaseSensitive";
@@ -148,9 +150,9 @@
             grpBoxSearchResult.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             grpBoxSearchResult.Controls.Add(dataGridViewResults);
             grpBoxSearchResult.Controls.Add(BtnRetSearch);
-            grpBoxSearchResult.Location = new Point(12, 16);
+            grpBoxSearchResult.Location = new Point(6, 249);
             grpBoxSearchResult.Name = "grpBoxSearchResult";
-            grpBoxSearchResult.Size = new Size(411, 679);
+            grpBoxSearchResult.Size = new Size(411, 446);
             grpBoxSearchResult.TabIndex = 8;
             grpBoxSearchResult.TabStop = false;
             // 
@@ -158,10 +160,12 @@
             // 
             dataGridViewResults.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             dataGridViewResults.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
+            dataGridViewResults.Cursor = Cursors.Hand;
             dataGridViewResults.Location = new Point(9, 88);
+            dataGridViewResults.MultiSelect = false;
             dataGridViewResults.Name = "dataGridViewResults";
             dataGridViewResults.RowHeadersWidth = 51;
-            dataGridViewResults.Size = new Size(395, 585);
+            dataGridViewResults.Size = new Size(395, 352);
             dataGridViewResults.TabIndex = 5;
             dataGridViewResults.CellMouseDoubleClick += dataGridViewResults_CellMouseDoubleClick;
             dataGridViewResults.CellPainting += dataGridViewResults_CellPainting;

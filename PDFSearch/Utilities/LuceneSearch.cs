@@ -1,4 +1,6 @@
-﻿using Lucene.Net.Analysis.Standard;
+﻿using Lucene.Net.Analysis;
+using Lucene.Net.Analysis.Core;
+using Lucene.Net.Analysis.Standard;
 using Lucene.Net.Index;
 using Lucene.Net.QueryParsers.Classic;
 using Lucene.Net.Search;
@@ -6,15 +8,13 @@ using Lucene.Net.Store;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Text;
 using Directory = System.IO.Directory;
 
 namespace PDFSearch.Utilities;
 
 public class LuceneSearcher
 {
-    // Use FolderUtility to generate the base path and hashed folder names
-    public List<SearchResult> SearchInDirectory(string queryText, string folderPath, string? filePath = null)
+    public static List<SearchResult> SearchInDirectory(string queryText, string folderPath, bool matchWord = false, bool matchCase = false, string? filePath = null)
     {
         try
         {
@@ -27,9 +27,21 @@ public class LuceneSearcher
                 throw new DirectoryNotFoundException($"No index found for directory: {folderPath}");
 
             using var dir = FSDirectory.Open(uniqueIndexPath);
-            using var analyzer = new StandardAnalyzer(Lucene.Net.Util.LuceneVersion.LUCENE_48);
+
+            // Use a custom analyzer for case-sensitive search
+            Analyzer analyzer = matchCase ? new CaseSensitiveStandardAnalyzer(Lucene.Net.Util.LuceneVersion.LUCENE_48)
+                                          : new StandardAnalyzer(Lucene.Net.Util.LuceneVersion.LUCENE_48);
+
             var parser = new QueryParser(Lucene.Net.Util.LuceneVersion.LUCENE_48, "Content", analyzer);
-            var query = parser.Parse($"\"{queryText}\"");
+
+            // Modify the query based on MatchWord option
+            if (matchWord)
+            {
+                // Wrap the query in double quotes for whole-word matching
+                queryText = $"\"{queryText}\"";
+            }
+
+            var query = parser.Parse(queryText);
 
             using var reader = DirectoryReader.Open(dir);
             var searcher = new IndexSearcher(reader);
@@ -44,7 +56,7 @@ public class LuceneSearcher
 
                 // Get the content of the document and extract a snippet
                 var content = doc.Get("Content");
-                var snippet = ExtractSnippet(content, queryText);
+                var snippet = ExtractSnippet(content, queryText, matchCase);
 
                 string documentFilePath = doc.Get("FilePath");
 
@@ -80,10 +92,11 @@ public class LuceneSearcher
         }
     }
 
-    private static string ExtractSnippet(string content, string searchTerm)
+    private static string ExtractSnippet(string content, string searchTerm, bool matchCase)
     {
         // Look for the search term in the content and extract a snippet
-        int termIndex = content.IndexOf(searchTerm, StringComparison.OrdinalIgnoreCase);
+        int termIndex = matchCase ? content.IndexOf(searchTerm)
+                                  : content.IndexOf(searchTerm, StringComparison.OrdinalIgnoreCase);
 
         if (termIndex == -1)
             return string.Empty;
@@ -92,7 +105,7 @@ public class LuceneSearcher
         int snippetLength = 100;
 
         // Start the snippet from the position of the search term
-        int start = termIndex;
+        int start = Math.Max(0, termIndex - 50); // Include some context before the term
         // End the snippet at the position of the term + 100 characters (or the end of content)
         int end = Math.Min(termIndex + searchTerm.Length + snippetLength, content.Length);
 
@@ -100,7 +113,7 @@ public class LuceneSearcher
         string snippet = content.Substring(start, end - start);
 
         // Optionally, highlight the search term in the snippet
-        snippet = snippet.Replace(searchTerm, $"<b>{searchTerm}</b>", StringComparison.OrdinalIgnoreCase);
+        snippet = snippet.Replace(searchTerm, $"<b>{searchTerm}</b>", matchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase);
 
         return snippet;
     }
@@ -112,4 +125,22 @@ public class SearchResult
     public string RelativePath { get; set; }
     public string Snippet { get; set; }
     public int PageNumber { get; set; }
+}
+
+// Custom analyzer for case-sensitive search
+public class CaseSensitiveStandardAnalyzer(Lucene.Net.Util.LuceneVersion matchVersion) : Analyzer
+{
+    private readonly Lucene.Net.Util.LuceneVersion _matchVersion = matchVersion;
+
+    protected override TokenStreamComponents CreateComponents(string fieldName, TextReader reader)
+    {
+        // Use StandardTokenizer for tokenization
+        var source = new StandardTokenizer(_matchVersion, reader);
+
+        // Apply StandardFilter for basic normalization
+        TokenStream result = new StandardFilter(_matchVersion, source);
+
+        // Skip LowerCaseFilter to preserve case sensitivity
+        return new TokenStreamComponents(source, result);
+    }
 }
