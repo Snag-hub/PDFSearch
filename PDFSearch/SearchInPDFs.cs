@@ -383,6 +383,7 @@ public partial class SearchInPDFs : Form
             if (filteredResults.Count <= 0)
             {
                 MessageBox.Show("No results found.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
             }
 
             ShowHideResultGroupBox();
