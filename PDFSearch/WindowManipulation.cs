@@ -22,12 +22,12 @@ public class WindowManipulation
 
 public class PdfOpener
 {
-    public static void OpenPdfAtPage(string filePath, int pageNumber)
+    public static void OpenPdfAtPage(string filePath, int pageNumber, string rootPath)
     {
         try
         {
             // Load configuration to get the PDF opener path
-            ConfigManager config = ConfigManager.LoadConfig();
+            ConfigManager config = ConfigManager.LoadConfig(rootPath);
             if (config == null || string.IsNullOrWhiteSpace(config.PdfOpener))
             {
                 MessageBox.Show("Configuration not found or PDF opener path is not specified.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);

@@ -9,12 +9,22 @@ namespace PDFSearch;
 
 public static class FolderManager
 {
-    // Path to the folder structure JSON file, stored in the same base path as LuceneIndexer
-    private static readonly string JsonFilePath = Path.Combine(FolderUtility.BasePath, "FolderStructure.json");
-
     static FolderManager()
     {
         FolderUtility.EnsureBasePathExists();
+    }
+
+    // Get the path to the folder structure JSON file for a given root path
+    private static string GetJsonFilePath(string rootPath)
+    {
+        // Get the hashed folder for the root path
+        string hashedFolderPath = FolderUtility.GetFolderForPath(rootPath);
+
+        // Ensure the hashed folder exists
+        Directory.CreateDirectory(hashedFolderPath);
+
+        // Return the path to the JSON file inside the hashed folder
+        return Path.Combine(hashedFolderPath, "FolderStructure.json");
     }
 
     // Save folder structure to JSON file
@@ -31,23 +41,31 @@ public static class FolderManager
                                        .OrderBy(dir => dir)
                                        .ToList();
 
-        // Serialize to JSON and save to file
+        // Serialize to JSON
         var json = JsonSerializer.Serialize(folderStructure);
-        File.WriteAllText(JsonFilePath, json);
-        Console.WriteLine("Folder structure saved.");
+
+        // Get the path to the JSON file inside the hashed folder
+        string jsonFilePath = GetJsonFilePath(rootPath);
+
+        // Write the JSON to the file
+        File.WriteAllText(jsonFilePath, json);
+        Console.WriteLine($"Folder structure saved to: {jsonFilePath}");
     }
 
     // Load folder structure from JSON file
-    public static List<string> LoadFolderStructure()
+    public static List<string> LoadFolderStructure(string rootPath)
     {
-        if (!File.Exists(JsonFilePath))
+        // Get the path to the JSON file inside the hashed folder
+        string jsonFilePath = GetJsonFilePath(rootPath);
+
+        if (!File.Exists(jsonFilePath))
         {
             Console.WriteLine("Folder structure file not found.");
             return [];
         }
 
         // Read and deserialize JSON
-        var json = File.ReadAllText(JsonFilePath);
+        var json = File.ReadAllText(jsonFilePath);
         return JsonSerializer.Deserialize<List<string>>(json) ?? new List<string>();
     }
 

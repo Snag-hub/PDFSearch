@@ -91,10 +91,10 @@ public partial class SearchInPDFs : Form
     private void SearchInPDFs_Load(object sender, EventArgs e)
     {
         txtSearchBox.Focus();
-        List<string> folderStructure = FolderManager.LoadFolderStructure(); if (folderStructure.Count == 0)
+        List<string> folderStructure = FolderManager.LoadFolderStructure(_launchDirectory); if (folderStructure.Count == 0)
         {
             FolderManager.SaveFolderStructure(_launchDirectory);
-            folderStructure = FolderManager.LoadFolderStructure();
+            folderStructure = FolderManager.LoadFolderStructure(_launchDirectory);
         }
 
         AddDirectoriesToTreeView(_launchDirectory, folderStructure);
@@ -512,7 +512,7 @@ public partial class SearchInPDFs : Form
                 var pageNumber = selectedResult.PageNumber;
 
                 // Open the PDF at the specific page
-                PdfOpener.OpenPdfAtPage(filePath, pageNumber);
+                PdfOpener.OpenPdfAtPage(filePath, pageNumber, _launchDirectory);
             }
             else
             {
@@ -666,7 +666,7 @@ public partial class SearchInPDFs : Form
     private void BindFromToCombos()
     {
 
-        List<string> directories = FolderManager.LoadFolderStructure();
+        List<string> directories = FolderManager.LoadFolderStructure(_launchDirectory);
         if (directories.Count != 0)
         {
             foreach (string directory in directories)
@@ -758,7 +758,7 @@ public partial class SearchInPDFs : Form
                     int pageNumber = Convert.ToInt32(PageNo);
 
                     // Open the PDF at the specific page
-                    PdfOpener.OpenPdfAtPage(fullPath, pageNumber);
+                    PdfOpener.OpenPdfAtPage(fullPath, pageNumber, _launchDirectory);
                 }
                 else
                 {

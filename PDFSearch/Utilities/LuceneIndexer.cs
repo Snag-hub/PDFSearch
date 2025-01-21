@@ -16,34 +16,48 @@ namespace PDFSearch.Utilities;
 
 public static class LuceneIndexer
 {
-    // Metadata file path to store information about indexed files
-    private static readonly string MetadataFilePath = Path.Combine(FolderUtility.BasePath, "indexedFiles.json");
-
     // Ensure the base path exists when the application starts
     static LuceneIndexer()
     {
         FolderUtility.EnsureBasePathExists();
     }
 
-    // Load metadata from the file to track indexed files
-    private static Dictionary<string, DateTime> LoadMetadata()
+    // Get the path to the metadata file for a given folder path
+    private static string GetMetadataFilePath(string folderPath)
     {
-        if (File.Exists(MetadataFilePath))
+        // Get the hashed folder for the folder path
+        string hashedFolderPath = FolderUtility.GetFolderForPath(folderPath);
+
+        // Ensure the hashed folder exists
+        Directory.CreateDirectory(hashedFolderPath);
+
+        // Return the path to the metadata file inside the hashed folder
+        return Path.Combine(hashedFolderPath, "indexedFiles.json");
+    }
+
+    // Load metadata from the file to track indexed files
+    private static Dictionary<string, DateTime> LoadMetadata(string folderPath)
+    {
+        string metadataFilePath = GetMetadataFilePath(folderPath);
+
+        if (File.Exists(metadataFilePath))
         {
-            var json = File.ReadAllText(MetadataFilePath);
+            var json = File.ReadAllText(metadataFilePath);
             return JsonSerializer.Deserialize<Dictionary<string, DateTime>>(json) ?? new Dictionary<string, DateTime>();
         }
         return new Dictionary<string, DateTime>();
     }
 
     // Save metadata to the file after updating
-    private static void SaveMetadata(Dictionary<string, DateTime> metadata)
+    private static void SaveMetadata(string folderPath, Dictionary<string, DateTime> metadata)
     {
         var json = JsonSerializer.Serialize(metadata);
 
-        // Ensure the directory exists before saving
-        FolderUtility.EnsureBasePathExists();
-        File.WriteAllText(MetadataFilePath, json);
+        // Get the path to the metadata file inside the hashed folder
+        string metadataFilePath = GetMetadataFilePath(folderPath);
+
+        // Write the JSON to the file
+        File.WriteAllText(metadataFilePath, json);
     }
 
     // Index files in a specific folder
@@ -56,7 +70,7 @@ public static class LuceneIndexer
         string uniqueIndexPath = FolderUtility.GetFolderForPath(folderPath);
         Directory.CreateDirectory(uniqueIndexPath);
 
-        var metadata = LoadMetadata();
+        var metadata = LoadMetadata(folderPath);
         var updatedMetadata = new ConcurrentDictionary<string, DateTime>();
 
         using var dir = FSDirectory.Open(uniqueIndexPath);
@@ -123,7 +137,7 @@ public static class LuceneIndexer
                 metadata[entry.Key] = entry.Value;
             }
 
-            SaveMetadata(metadata);
+            SaveMetadata(folderPath, metadata);
             Console.WriteLine("Metadata updated.");
         }
 

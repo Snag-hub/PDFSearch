@@ -27,7 +27,7 @@ public partial class PopupForm : Form
         acrobatWindowManager = new AcrobatWindowManager(folderPath);
 
         // Check if configuration exists
-        ConfigManager config = ConfigManager.LoadConfig();
+        ConfigManager config = ConfigManager.LoadConfig(folderPath);
 
         if (config == null)
         {
@@ -152,7 +152,7 @@ public partial class PopupForm : Form
         OpenFileDialog openFileDialog = new()
         {
             Filter = "PDF Files|*.pdf",
-            Title = "Select the Start File (index.pdf)"
+            Title = "Select the Start/Landing Page File (index.pdf)"
         };
 
         if (openFileDialog.ShowDialog() == DialogResult.OK)
@@ -172,9 +172,10 @@ public partial class PopupForm : Form
             Form selectionForm = new()
             {
                 Text = "Select PDF Reader",
-                Size = new System.Drawing.Size(400, 200),
+                Size = new System.Drawing.Size(400, 400),
                 FormBorderStyle = FormBorderStyle.FixedDialog,
-                StartPosition = FormStartPosition.CenterScreen
+                StartPosition = FormStartPosition.CenterScreen,
+                WindowState = FormWindowState.Normal
             };
 
             // Add a label
@@ -226,7 +227,7 @@ public partial class PopupForm : Form
                         PdfOpener = selectedReaderPath
                     };
 
-                    config.SaveConfig();
+                    config.SaveConfig(folderPath);
 
                     MessageBox.Show("Configuration saved successfully!");
                 }
@@ -291,17 +292,6 @@ public partial class PopupForm : Form
             if (File.Exists(foxitPath))
             {
                 pdfReaders.Add("Foxit Reader", foxitPath);
-                break; // Stop searching once found
-            }
-        }
-
-        // Microsoft Edge
-        foreach (var programFilesPath in programFilesPaths)
-        {
-            string edgePath = Path.Combine(programFilesPath, @"Microsoft\Edge\Application\msedge.exe");
-            if (File.Exists(edgePath))
-            {
-                pdfReaders.Add("Microsoft Edge", edgePath);
                 break; // Stop searching once found
             }
         }

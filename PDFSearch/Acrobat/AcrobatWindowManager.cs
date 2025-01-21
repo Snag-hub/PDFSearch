@@ -132,7 +132,7 @@ internal class AcrobatWindowManager
         try
         {
             // Load configuration to get the StartFile and PdfOpener
-            ConfigManager config = ConfigManager.LoadConfig();
+            ConfigManager config = ConfigManager.LoadConfig(_launchDirectory);
             if (config == null || string.IsNullOrWhiteSpace(config.StartFile) || string.IsNullOrWhiteSpace(config.PdfOpener))
             {
                 MessageBox.Show("Configuration not found or StartFile/PdfOpener is not specified.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
