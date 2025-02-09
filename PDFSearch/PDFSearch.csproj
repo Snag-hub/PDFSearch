@@ -8,6 +8,10 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <PlatformTarget>x64</PlatformTarget>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <ApplicationIcon>paper.ico</ApplicationIcon>
+        <AssemblyName>FindInPDFs</AssemblyName>
+        <RootNamespace>FindInPDFs</RootNamespace>
+        <PackageIcon>paper.png</PackageIcon>
     </PropertyGroup>
 
     <ItemGroup>
@@ -20,6 +24,17 @@
         <Isolated>false</Isolated>
         <EmbedInteropTypes>true</EmbedInteropTypes>
       </COMReference>
+    </ItemGroup>
+
+    <ItemGroup>
+      <Content Include="paper.ico" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <None Include="..\..\paper.png">
+        <Pack>True</Pack>
+        <PackagePath>\</PackagePath>
+      </None>
     </ItemGroup>
 
     <ItemGroup>

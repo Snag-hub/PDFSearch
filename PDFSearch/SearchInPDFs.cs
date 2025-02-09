@@ -98,7 +98,11 @@ public partial class SearchInPDFs : Form
         }
 
         AddDirectoriesToTreeView(_launchDirectory, folderStructure);
-        TvSearchRange.ExpandAll();
+        if (TvSearchRange.Nodes.Count > 0)
+        {
+            TvSearchRange.Nodes[0].Expand();  // Expands only the first (root) node
+        }
+
 
         // some import calling
         BindFromToCombos();
@@ -512,7 +516,7 @@ public partial class SearchInPDFs : Form
                 var pageNumber = selectedResult.PageNumber;
 
                 // Open the PDF at the specific page
-                PdfOpener.OpenPdfAtPage(filePath, pageNumber, _launchDirectory);
+                PdfOpener.OpenPdfAtPage(filePath, pageNumber, txtSearchBox.Text, _launchDirectory);
             }
             else
             {
@@ -758,7 +762,7 @@ public partial class SearchInPDFs : Form
                     int pageNumber = Convert.ToInt32(PageNo);
 
                     // Open the PDF at the specific page
-                    PdfOpener.OpenPdfAtPage(fullPath, pageNumber, _launchDirectory);
+                    PdfOpener.OpenPdfAtPage(fullPath, pageNumber, txtSearchBox.Text, _launchDirectory);
                 }
                 else
                 {

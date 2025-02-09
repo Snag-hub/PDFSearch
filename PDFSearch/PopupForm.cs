@@ -281,8 +281,21 @@ public partial class PopupForm : Form
             {
                 pdfReaders.Add("Adobe Acrobat Reader 2020", acrobat2020Path);
             }
+            
+            // Check for Adobe Acrobat Reader 2020
+            string acrobat11 = Path.Combine(programFilesPath, @"Adobe\Acrobat 11.0\Acrobat\Acrobat.exe");
+            if (File.Exists(acrobat11))
+            {
+                pdfReaders.Add("Adobe Acrobat 11.0", acrobat11);
+            }
+            
+            // Check for Adobe Acrobat Reader 2020
+            string acrobat10 = Path.Combine(programFilesPath, @"Adobe\Acrobat 10.0\Acrobat\Acrobat.exe");
+            if (File.Exists(acrobat10))
+            {
+                pdfReaders.Add("Adobe Acrobat 10.0", acrobat10);
+            }
 
-            // Add more versions as needed...
         }
 
         // Foxit Reader
@@ -292,17 +305,6 @@ public partial class PopupForm : Form
             if (File.Exists(foxitPath))
             {
                 pdfReaders.Add("Foxit Reader", foxitPath);
-                break; // Stop searching once found
-            }
-        }
-
-        // Google Chrome
-        foreach (var programFilesPath in programFilesPaths)
-        {
-            string chromePath = Path.Combine(programFilesPath, @"Google\Chrome\Application\chrome.exe");
-            if (File.Exists(chromePath))
-            {
-                pdfReaders.Add("Google Chrome", chromePath);
                 break; // Stop searching once found
             }
         }
