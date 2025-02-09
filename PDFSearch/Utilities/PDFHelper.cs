@@ -13,7 +13,6 @@ public static class PdfHelper
         var extractedData = new Dictionary<string, Dictionary<int, string>>();
         var pdfFiles = new List<string>();
 
-        // Collect PDF files from all directories
         foreach (var directory in directories)
         {
             if (!Directory.Exists(directory))
@@ -25,14 +24,12 @@ public static class PdfHelper
             pdfFiles.AddRange(Directory.GetFiles(directory, "*.pdf", SearchOption.AllDirectories));
         }
 
-        // Process PDF files in parallel
-        Parallel.ForEach(pdfFiles, pdfFile =>
+        Parallel.ForEach(pdfFiles, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, pdfFile =>
         {
             try
             {
                 var textByPage = ExtractTextFromPdfPages(pdfFile);
-
-                lock (extractedData) // Synchronize access to shared dictionary
+                lock (extractedData)
                 {
                     extractedData[pdfFile] = textByPage;
                 }
