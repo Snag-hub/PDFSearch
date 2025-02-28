@@ -1,18 +1,17 @@
 ﻿using Lucene.Net.Analysis.Standard;
 using Lucene.Net.Documents;
 using Lucene.Net.Index;
+using Lucene.Net.Index.Extensions;
 using Lucene.Net.Store;
-using System.Text.Json;
+using Microsoft.VisualBasic.Devices;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
-using System.Text;
+using System.Text.Json;
+using System.Threading.Tasks;
 using Directory = System.IO.Directory;
-using Microsoft.VisualBasic.Devices;
-using Lucene.Net.Index.Extensions; // Required for RAM detection
 
 namespace PDFSearch.Utilities;
 
@@ -48,91 +47,22 @@ public static class LuceneIndexer
         File.WriteAllText(metadataFilePath, json);
     }
 
-    #region Static memory buffer without merge conflict
-    //public static void IndexDirectory(string folderPath)
-    //{
-    //    if (!Directory.Exists(folderPath))
-    //        throw new DirectoryNotFoundException($"The folder '{folderPath}' does not exist.");
+    private static List<string> GetNewOrUpdatedFiles(string folderPath, Dictionary<string, DateTime> metadata)
+    {
+        var allFiles = Directory.GetFiles(folderPath, "*.pdf", SearchOption.AllDirectories).ToList();
+        var newOrUpdatedFiles = new List<string>();
 
-    //    string uniqueIndexPath = FolderUtility.GetFolderForPath(folderPath);
-    //    Directory.CreateDirectory(uniqueIndexPath);
+        foreach (var file in allFiles)
+        {
+            var lastModified = File.GetLastWriteTimeUtc(file);
+            if (!metadata.TryGetValue(file, out var indexedTime) || indexedTime < lastModified)
+            {
+                newOrUpdatedFiles.Add(file);
+            }
+        }
 
-    //    var metadata = LoadMetadata(folderPath);
-    //    var updatedMetadata = new ConcurrentDictionary<string, DateTime>();
-
-    //    using var dir = FSDirectory.Open(uniqueIndexPath);
-    //    using var analyzer = new StandardAnalyzer(Lucene.Net.Util.LuceneVersion.LUCENE_48);
-
-    //    // Dynamically set RAM buffer size
-    //    double ramBufferMB = GetOptimalRamBuffer();
-    //    Console.WriteLine($"Using RAM Buffer: {ramBufferMB}MB");
-
-    //    var config = new IndexWriterConfig(Lucene.Net.Util.LuceneVersion.LUCENE_48, analyzer)
-    //    {
-    //        OpenMode = OpenMode.CREATE_OR_APPEND,
-    //        RAMBufferSizeMB = ramBufferMB,
-    //        MaxBufferedDocs = 1000
-    //    };
-
-    //    using var writer = new IndexWriter(dir, config);
-    //    var pdfFiles = Directory.GetFiles(folderPath, "*.pdf", SearchOption.AllDirectories);
-
-    //    // Process files in parallel (Adjust degree of parallelism if needed)
-    //    Parallel.ForEach(pdfFiles, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, pdfFile =>
-    //    {
-    //        try
-    //        {
-    //            var lastModified = File.GetLastWriteTimeUtc(pdfFile);
-    //            if (metadata.TryGetValue(pdfFile, out var indexedTime) && indexedTime >= lastModified)
-    //            {
-    //                Console.WriteLine($"Skipping indexed file: {pdfFile}");
-    //                return;
-    //            }
-
-    //            var textByPage = PdfHelper.ExtractTextFromPdfPages(pdfFile);
-    //            string relativePath = Path.GetRelativePath(folderPath, pdfFile);
-
-    //            var docs = new List<Document>();
-    //            foreach (var (page, text) in textByPage)
-    //            {
-    //                var doc = new Document
-    //                {
-    //                    new StringField("FilePath", pdfFile, Field.Store.YES),
-    //                    new StringField("RelativePath", relativePath, Field.Store.YES),
-    //                    new Int32Field("PageNumber", page, Field.Store.YES),
-    //                    new TextField("Content", text, Field.Store.YES)
-    //                };
-    //                docs.Add(doc);
-    //            }
-
-    //            lock (writer)
-    //            {
-    //                writer.AddDocuments(docs);
-    //            }
-
-    //            updatedMetadata[pdfFile] = lastModified;
-    //        }
-    //        catch (Exception ex)
-    //        {
-    //            Console.WriteLine($"Error processing file '{pdfFile}': {ex.Message}");
-    //        }
-    //    });
-
-    //    writer.Flush(triggerMerge: false, applyAllDeletes: false);
-
-    //    lock (metadata)
-    //    {
-    //        foreach (var entry in updatedMetadata)
-    //        {
-    //            metadata[entry.Key] = entry.Value;
-    //        }
-    //        SaveMetadata(folderPath, metadata);
-    //        Console.WriteLine("Metadata updated.");
-    //    }
-
-    //    Console.WriteLine($"Indexing completed for directory: {folderPath}. Index stored at: {uniqueIndexPath}");
-    //}
-    #endregion
+        return newOrUpdatedFiles;
+    }
 
     public static void IndexDirectory(string folderPath)
     {
@@ -170,25 +100,17 @@ public static class LuceneIndexer
         config.SetMergePolicy(mergePolicy);
 
         using var writer = new IndexWriter(dir, config);
-        var pdfFiles = Directory.GetFiles(folderPath, "*.pdf", SearchOption.AllDirectories);
 
-        int maxParallelism = Math.Max(1, Environment.ProcessorCount / 2);
-        var fileChunks = pdfFiles.Chunk(pdfFiles.Length / maxParallelism); // Divide files into batches
+        // Check for new or updated files
+        var newOrUpdatedFiles = GetNewOrUpdatedFiles(folderPath, metadata);
 
-        // Process each chunk in parallel
-        Parallel.ForEach(fileChunks, new ParallelOptions { MaxDegreeOfParallelism = maxParallelism }, chunk =>
+        if (newOrUpdatedFiles.Any())
         {
-            foreach (var pdfFile in chunk)
+            // Process files in parallel (Adjust degree of parallelism if needed)
+            Parallel.ForEach(newOrUpdatedFiles, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, pdfFile =>
             {
                 try
                 {
-                    var lastModified = File.GetLastWriteTimeUtc(pdfFile);
-                    if (metadata.TryGetValue(pdfFile, out var indexedTime) && indexedTime >= lastModified)
-                    {
-                        Console.WriteLine($"Skipping indexed file: {pdfFile}");
-                        continue;
-                    }
-
                     var textByPage = PdfHelper.ExtractTextFromPdfPages(pdfFile);
                     string relativePath = Path.GetRelativePath(folderPath, pdfFile);
 
@@ -196,12 +118,12 @@ public static class LuceneIndexer
                     foreach (var (page, text) in textByPage)
                     {
                         var doc = new Document
-                    {
-                        new StringField("FilePath", pdfFile, Field.Store.YES),
-                        new StringField("RelativePath", relativePath, Field.Store.YES),
-                        new Int32Field("PageNumber", page, Field.Store.YES),
-                        new TextField("Content", text, Field.Store.YES)
-                    };
+                        {
+                            new StringField("FilePath", pdfFile, Field.Store.YES),
+                            new StringField("RelativePath", relativePath, Field.Store.YES),
+                            new Int32Field("PageNumber", page, Field.Store.YES),
+                            new TextField("Content", text, Field.Store.YES)
+                        };
                         docs.Add(doc);
                     }
 
@@ -210,32 +132,66 @@ public static class LuceneIndexer
                         writer.AddDocuments(docs);
                     }
 
-                    updatedMetadata[pdfFile] = lastModified;
+                    updatedMetadata[pdfFile] = File.GetLastWriteTimeUtc(pdfFile);
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Error processing file '{pdfFile}': {ex.Message}");
                 }
-            }
-        });
+            });
 
-        // Merge indexes after processing
-        writer.Flush(triggerMerge: true, applyAllDeletes: false);
-        writer.Commit(); // Commit the changes
+            // Merge indexes after processing
+            writer.Flush(triggerMerge: true, applyAllDeletes: false);
+            writer.Commit(); // Commit the changes
 
-        lock (metadata)
-        {
-            foreach (var entry in updatedMetadata)
+            // Update the metadata with the new or updated files
+            lock (metadata)
             {
-                metadata[entry.Key] = entry.Value;
+                foreach (var entry in updatedMetadata)
+                {
+                    metadata[entry.Key] = entry.Value;
+                }
+                SaveMetadata(folderPath, metadata);
+                Console.WriteLine("Metadata updated.");
             }
-            SaveMetadata(folderPath, metadata);
-            Console.WriteLine("Metadata updated.");
+
+            Console.WriteLine($"Indexed {newOrUpdatedFiles.Count} new or updated files.");  // For debugging
+        }
+        else
+        {
+            Console.WriteLine("No new or updated files to index.");  // For debugging
         }
 
-        Console.WriteLine($"Indexing completed for directory: {folderPath}. Index stored at: {uniqueIndexPath}");
+        // Update the folder structure with any new folders
+        UpdateFolderStructure(folderPath);
     }
 
+    private static void UpdateFolderStructure(string folderPath)
+    {
+        // Get the current folder structure
+        var currentFolders = Directory.GetDirectories(folderPath, "*", SearchOption.AllDirectories).ToList();
+
+        // Load the existing folder structure from the JSON file
+        var folderStructure = FolderManager.LoadFolderStructure(folderPath);
+
+        // Check for new folders
+        var newFolders = currentFolders.Except(folderStructure).ToList();
+
+        if (newFolders.Any())
+        {
+            // Add new folders to the folder structure
+            folderStructure.AddRange(newFolders);
+
+            // Save the updated folder structure
+            FolderManager.SaveFolderStructure(folderPath);
+
+            Console.WriteLine($"Added {newFolders.Count} new folders to the folder structure.");
+        }
+        else
+        {
+            Console.WriteLine("No new folders to add.");
+        }
+    }
 
     // Function to determine optimal RAM buffer based on system RAM
     private static double GetOptimalRamBuffer()

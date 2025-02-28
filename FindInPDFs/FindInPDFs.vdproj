@@ -316,9 +316,9 @@
                                                     "Transitive" = "11:FALSE"
                                                         "Keys"
                                                         {
-                                                            "{60EA8692-D2D5-43EB-80DC-7906BF13D6EF}:_041423F852D14B668CE2D81DCEC89282"
+                                                            "{60EA8692-D2D5-43EB-80DC-7906BF13D6EF}:_EF823AD0F0F348379F2798983EDD8E04"
                                                             {
-                                                            "Name" = "8:Shell Icons"
+                                                            "Name" = "8:TaskManager"
                                                             "Condition" = "8:"
                                                             "AlwaysCreate" = "11:FALSE"
                                                             "DeleteAtUninstall" = "11:FALSE"
@@ -328,9 +328,9 @@
                                                                 }
                                                                 "Values"
                                                                 {
-                                                                    "{ADCFDA98-8FDD-45E4-90BC-E3D20B029870}:_A142D243533A4D5BAF71ED178C3E19ED"
+                                                                    "{ADCFDA98-8FDD-45E4-90BC-E3D20B029870}:_CF5443768D514F64BFA02C0865FF3C86"
                                                                     {
-                                                                    "Name" = "8:29"
+                                                                    "Name" = "8:FindInPDFs.exe"
                                                                     "Condition" = "8:"
                                                                     "Transitive" = "11:FALSE"
                                                                     "ValueTypes" = "3:1"

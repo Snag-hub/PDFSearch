@@ -91,7 +91,8 @@ public partial class SearchInPDFs : Form
     private void SearchInPDFs_Load(object sender, EventArgs e)
     {
         txtSearchBox.Focus();
-        List<string> folderStructure = FolderManager.LoadFolderStructure(_launchDirectory); if (folderStructure.Count == 0)
+        List<string> folderStructure = FolderManager.LoadFolderStructure(_launchDirectory); 
+        if (folderStructure.Count == 0)
         {
             FolderManager.SaveFolderStructure(_launchDirectory);
             folderStructure = FolderManager.LoadFolderStructure(_launchDirectory);
