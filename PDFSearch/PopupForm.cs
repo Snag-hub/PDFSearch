@@ -1,4 +1,5 @@
-﻿using PDFSearch.Acrobat;
+﻿using Microsoft.Win32;
+using PDFSearch.Acrobat;
 using PDFSearch.Utilities;
 using System;
 using System.Collections.Generic;
@@ -12,8 +13,8 @@ namespace PDFSearch;
 public partial class PopupForm : Form
 {
     private readonly string folderPath = string.Empty;
-    private Panel overlayPanel;
-    private Label loadingLabel;
+    private readonly Panel overlayPanel;
+    private readonly Label loadingLabel;
     private readonly AcrobatWindowManager acrobatWindowManager;
 
     // Static reference to keep track of the instance
@@ -213,7 +214,7 @@ public partial class PopupForm : Form
             // Show the selection form
             if (selectionForm.ShowDialog() == DialogResult.OK)
             {
-                string selectedReaderName = selectionForm.Controls.OfType<RadioButton>()
+                string? selectedReaderName = selectionForm.Controls.OfType<RadioButton>()
                     .FirstOrDefault(rb => rb.Checked)?.Text;
 
                 if (selectedReaderName != null)
@@ -239,76 +240,129 @@ public partial class PopupForm : Form
     {
         var pdfReaders = new Dictionary<string, string>();
 
-        // Common PDF readers and their default installation paths
-        string[] programFilesPaths =
+        // Registry base paths to check
+        string[] registryBasePaths =
         [
-            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), // C:\Program Files (x86)
-            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles)     // C:\Program Files
+            @"SOFTWARE\Adobe\Adobe Acrobat",           // Full Acrobat installations
+            @"SOFTWARE\Adobe\Acrobat Reader",         // Acrobat Reader installations
+            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", // Uninstall entries
+            @"SOFTWARE\WOW6432Node\Adobe\Adobe Acrobat",           // 32-bit Acrobat on 64-bit systems
+            @"SOFTWARE\WOW6432Node\Adobe\Acrobat Reader",          // 32-bit Reader on 64-bit systems
+            @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall" // 32-bit Uninstall
         ];
 
-        // Detect multiple versions of Adobe Acrobat Reader
-        foreach (var programFilesPath in programFilesPaths)
+        // Check HKEY_LOCAL_MACHINE (you can add Registry.CurrentUser if needed)
+        RegistryKey[] rootKeys = [Registry.LocalMachine];
+
+        foreach (var rootKey in rootKeys)
         {
-            // Check for Adobe Acrobat Reader DC
-            string acrobatDCPath = Path.Combine(programFilesPath, @"Adobe\Acrobat Reader DC\Reader\AcroRd32.exe");
-            if (File.Exists(acrobatDCPath))
+            foreach (var basePath in registryBasePaths)
             {
-                pdfReaders.Add("Adobe Acrobat Reader DC", acrobatDCPath);
-            }
+                try
+                {
+                    using var key = rootKey.OpenSubKey(basePath);
+                    if (key == null) continue;
 
-            string acrobatDC2Path = Path.Combine(programFilesPath, @"Adobe\Acrobat DC\Acrobat\Acrobat.exe");
-            if (File.Exists(acrobatDC2Path))
-            {
-                pdfReaders.Add("Adobe Acrobat Reader", acrobatDC2Path);
-            }
+                    if (basePath.Contains("Uninstall"))
+                    {
+                        // Search Uninstall keys for Adobe Acrobat or Foxit entries
+                        foreach (var subKeyName in key.GetSubKeyNames())
+                        {
+                            using var subKey = key.OpenSubKey(subKeyName);
+                            if (subKey == null) continue;
 
-            string acrobat10Path = Path.Combine(programFilesPath, @"Adobe\Acrobat 10.0\Acrobat\AcroRd32.exe");
-            if (File.Exists(acrobat10Path))
-            {
-                pdfReaders.Add("Adobe Acrobat Reader DC", acrobat10Path);
-            }
+                            var displayName = subKey.GetValue("DisplayName")?.ToString();
+                            var installLocation = subKey.GetValue("InstallLocation")?.ToString();
+                            var exePath = "";
 
-            // Check for Adobe Acrobat Reader 2023
-            string acrobat2023Path = Path.Combine(programFilesPath, @"Adobe\Acrobat Reader 2023\Reader\AcroRd32.exe");
-            if (File.Exists(acrobat2023Path))
-            {
-                pdfReaders.Add("Adobe Acrobat Reader 2023", acrobat2023Path);
-            }
+                            if (string.IsNullOrEmpty(displayName)) continue;
 
-            // Check for Adobe Acrobat Reader 2020
-            string acrobat2020Path = Path.Combine(programFilesPath, @"Adobe\Acrobat Reader 2020\Reader\AcroRd32.exe");
-            if (File.Exists(acrobat2020Path))
-            {
-                pdfReaders.Add("Adobe Acrobat Reader 2020", acrobat2020Path);
-            }
-            
-            // Check for Adobe Acrobat Reader 2020
-            string acrobat11 = Path.Combine(programFilesPath, @"Adobe\Acrobat 11.0\Acrobat\Acrobat.exe");
-            if (File.Exists(acrobat11))
-            {
-                pdfReaders.Add("Adobe Acrobat 11.0", acrobat11);
-            }
-            
-            // Check for Adobe Acrobat Reader 2020
-            string acrobat10 = Path.Combine(programFilesPath, @"Adobe\Acrobat 10.0\Acrobat\Acrobat.exe");
-            if (File.Exists(acrobat10))
-            {
-                pdfReaders.Add("Adobe Acrobat 10.0", acrobat10);
-            }
+                            // Check for Adobe Acrobat or Foxit
+                            if (displayName.Contains("Adobe Acrobat") || displayName.Contains("Acrobat Reader"))
+                            {
+                                if (!string.IsNullOrEmpty(installLocation))
+                                {
+                                    exePath = FindExecutable(installLocation, "Acrobat.exe") ?? FindExecutable(installLocation, "AcroRd32.exe");
+                                }
+                            }
+                            else if (displayName.Contains("Foxit Reader"))
+                            {
+                                if (!string.IsNullOrEmpty(installLocation))
+                                {
+                                    exePath = FindExecutable(installLocation, "FoxitReader.exe");
+                                }
+                            }
 
-        }
+                            if (!string.IsNullOrEmpty(exePath) && !pdfReaders.ContainsKey(displayName))
+                            {
+                                pdfReaders.Add(displayName, exePath);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Search Adobe-specific keys for version subkeys
+                        foreach (var version in key.GetSubKeyNames())
+                        {
+                            using var versionKey = key.OpenSubKey($@"{version}\Installer");
+                            if (versionKey == null) continue;
 
-        // Foxit Reader
-        foreach (var programFilesPath in programFilesPaths)
-        {
-            string foxitPath = Path.Combine(programFilesPath, @"Foxit Software\Foxit Reader\FoxitReader.exe");
-            if (File.Exists(foxitPath))
-            {
-                pdfReaders.Add("Foxit Reader", foxitPath);
-                break; // Stop searching once found
+                            var installPath = versionKey.GetValue("Path")?.ToString();
+                            if (string.IsNullOrEmpty(installPath)) continue;
+
+                            var exePath = basePath.Contains("Acrobat Reader")
+                                ? FindExecutable(installPath, "AcroRd32.exe")
+                                : FindExecutable(installPath, "Acrobat.exe");
+
+                            if (!string.IsNullOrEmpty(exePath))
+                            {
+                                var name = basePath.Contains("Acrobat Reader")
+                                    ? $"Adobe Acrobat Reader {version}"
+                                    : $"Adobe Acrobat {version}";
+                                if (!pdfReaders.ContainsKey(name))
+                                {
+                                    pdfReaders.Add(name, exePath);
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception)
+                {
+                    // Log exception if needed, e.g., Console.WriteLine($"Error accessing registry: {ex.Message}");
+                    continue;
+                }
             }
         }
 
         return pdfReaders;
+    }
+
+    // Helper method to find the executable in the installation directory
+    private static string? FindExecutable(string installPath, string exeName)
+    {
+        try
+        {
+            var fullPath = Path.Combine(installPath, exeName);
+            if (File.Exists(fullPath))
+            {
+                return fullPath;
+            }
+
+            // Search subdirectories (e.g., Reader or Acrobat folder)
+            foreach (var dir in Directory.GetDirectories(installPath, "*", SearchOption.AllDirectories))
+            {
+                fullPath = Path.Combine(dir, exeName);
+                if (File.Exists(fullPath))
+                {
+                    return fullPath;
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // Ignore errors (e.g., access denied)
+        }
+        return null;
     }
 }
