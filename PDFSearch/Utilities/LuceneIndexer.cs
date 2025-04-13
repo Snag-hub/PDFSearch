@@ -5,9 +5,11 @@ using Lucene.Net.Index.Extensions;
 using Lucene.Net.Store;
 using Microsoft.VisualBasic.Devices;
 using PDFSearch.Helpers;
+using Serilog;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -21,6 +23,21 @@ namespace PDFSearch.Utilities
         static LuceneIndexer()
         {
             FolderUtility.EnsureBasePathExists();
+
+            string logDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs");
+            Directory.CreateDirectory(logDir);
+
+            string logPath = Path.Combine(logDir, "log-.txt");
+            Log.Logger = new LoggerConfiguration()
+                .MinimumLevel.Information()
+                .WriteTo.File(
+                    path: logPath,
+                    rollingInterval: RollingInterval.Day,
+                    outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
+                .CreateLogger();
+
+            Log.Information("LuceneIndexer initialized.");
+            Log.Information("Log path resolved to: {LogPath}", logPath);
         }
 
         private static string GetMetadataFilePath(string folderPath)
@@ -51,7 +68,6 @@ namespace PDFSearch.Utilities
         private static List<string> GetNewOrUpdatedFiles(List<string> files, Dictionary<string, DateTime> metadata)
         {
             var newOrUpdatedFiles = new List<string>();
-
             foreach (var file in files)
             {
                 var lastModified = File.GetLastWriteTimeUtc(file);
@@ -60,54 +76,54 @@ namespace PDFSearch.Utilities
                     newOrUpdatedFiles.Add(file);
                 }
             }
-
             return newOrUpdatedFiles;
         }
 
         public static void IndexDirectory(string folderPath)
         {
             if (!Directory.Exists(folderPath))
+            {
+                Log.Error("Directory not found: {FolderPath}", folderPath);
                 throw new DirectoryNotFoundException($"The folder '{folderPath}' does not exist.");
+            }
 
-            // Get folders to index based on size constraint
             var foldersToIndex = FolderIndexerHelper.GetFoldersToIndex(folderPath);
             string baseIndexPath = FolderUtility.GetFolderForPath(folderPath);
             Directory.CreateDirectory(baseIndexPath);
 
-            // Load metadata once for the entire operation
             var metadata = LoadMetadata(folderPath);
 
-            // Process each folder sequentially
             for (int i = 0; i < foldersToIndex.Count; i++)
             {
                 string folder = foldersToIndex[i];
                 string indexPath = Path.Combine(baseIndexPath, $"index_folder_{i}");
                 Directory.CreateDirectory(indexPath);
-                Console.WriteLine($"Indexing folder {i + 1}/{foldersToIndex.Count}: '{folder}'");
+                Log.Information("Indexing folder {CurrentFolder}/{TotalFolders}: '{Folder}'", i + 1, foldersToIndex.Count, folder);
 
                 IndexFolder(folder, indexPath, folderPath, metadata);
             }
 
-            // Save metadata once after all folders are indexed
             SaveMetadata(folderPath, metadata);
-            Console.WriteLine("Metadata updated for all folders.");
+            Log.Information("Metadata updated for all folders.");
             UpdateFolderStructure(folderPath);
-            Console.WriteLine("All folders indexed successfully.");
+            Log.Information("All folders indexed successfully.");
         }
 
         private static void IndexFolder(string folderToIndex, string indexPath, string rootFolderPath, Dictionary<string, DateTime> metadata)
         {
             var updatedMetadata = new ConcurrentDictionary<string, DateTime>();
+            var stopwatch = Stopwatch.StartNew();
+            var lockObject = new object(); // Define lockObject locally
 
             using var dir = FSDirectory.Open(indexPath);
             using var analyzer = new StandardAnalyzer(Lucene.Net.Util.LuceneVersion.LUCENE_48);
 
             double ramBufferMB = GetOptimalRamBuffer();
-            Console.WriteLine($"Using RAM Buffer: {ramBufferMB}MB for folder '{folderToIndex}'");
+            Log.Information("Using RAM Buffer: {RamBufferMB}MB for folder '{Folder}'", ramBufferMB, folderToIndex);
 
             var config = new IndexWriterConfig(Lucene.Net.Util.LuceneVersion.LUCENE_48, analyzer)
             {
-                OpenMode = OpenMode.CREATE, // Fresh index for each folder
+                OpenMode = OpenMode.CREATE,
                 RAMBufferSizeMB = ramBufferMB,
                 MaxBufferedDocs = 2000,
                 MergeScheduler = new ConcurrentMergeScheduler()
@@ -115,63 +131,254 @@ namespace PDFSearch.Utilities
 
             var mergePolicy = new TieredMergePolicy
             {
-                MaxMergeAtOnce = 20,
-                SegmentsPerTier = 15,
+                MaxMergeAtOnce = 5,
+                SegmentsPerTier = 10,
                 NoCFSRatio = 1.0
             };
             config.SetMergePolicy(mergePolicy);
 
             using var writer = new IndexWriter(dir, config);
 
-            // Get files in this folder (and subfolders if it’s a small folder)
             var files = Directory.GetFiles(folderToIndex, "*.pdf", SearchOption.AllDirectories).ToList();
             var newOrUpdatedFiles = GetNewOrUpdatedFiles(files, metadata);
 
             if (newOrUpdatedFiles.Count != 0)
             {
-                // Use a thread-safe collection to gather documents from all threads
-                var allDocs = new ConcurrentBag<List<Document>>();
-
-                // Process files in parallel without locking the writer
-               Parallel.ForEach(newOrUpdatedFiles, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount / 2 }, pdfFile =>
+                // Classify files
+                var largeFiles = new Queue<string>();
+                var smallFiles = new Queue<string>();
+                foreach (var file in newOrUpdatedFiles)
                 {
+                    var pageCount = PdfHelper.GetPageCount(file);
+                    var fileSize = new FileInfo(file).Length;
+                    if (fileSize > PdfHelper.LargeFileSizeThreshold || (pageCount.HasValue && pageCount.Value > PdfHelper.LargeFilePageThreshold))
+                        largeFiles.Enqueue(file);
+                    else
+                        smallFiles.Enqueue(file);
+                }
+
+                Log.Information("Starting processing: {LargeCount} large files, {SmallCount} small files", largeFiles.Count, smallFiles.Count);
+
+                // Process large files sequentially
+                while (largeFiles.Count > 0)
+                {
+                    var largeFile = largeFiles.Dequeue();
+                    Log.Information("Processing large file: {FilePath} (Size: {Size} MB, Pages: {Pages})", largeFile, new FileInfo(largeFile).Length / (1024 * 1024), PdfHelper.GetPageCount(largeFile) ?? 0);
                     try
                     {
                         var docs = new List<Document>();
-                        foreach (var page in PdfHelper.ExtractTextFromPdfPages(pdfFile)) // Updated to use IEnumerable
+                        int docCount = 0;
+                        var batchStopwatch = Stopwatch.StartNew();
+
+                        var pages = PdfHelper.ExtractTextFromPdfPages(largeFile).Result;
+                        foreach (var page in pages)
                         {
                             var doc = new Document
                             {
-                                new StringField("FilePath", pdfFile, Field.Store.YES),
-                                new StringField("RelativePath", Path.GetRelativePath(rootFolderPath, pdfFile), Field.Store.YES),
+                                new StringField("FilePath", largeFile, Field.Store.YES),
+                                new StringField("RelativePath", Path.GetRelativePath(rootFolderPath, largeFile), Field.Store.YES),
                                 new Int32Field("PageNumber", page.Key, Field.Store.YES),
-                                new TextField("Content", page.Value, Field.Store.YES)
+                                new TextField("Content", page.Value ?? "", Field.Store.YES)
                             };
                             docs.Add(doc);
+                            docCount++;
+
+                            if (docs.Count >= 100)
+                            {
+                                lock (writer)
+                                {
+                                    writer.AddDocuments(docs);
+                                    writer.Flush(triggerMerge: false, applyAllDeletes: false);
+                                }
+                                Log.Information("Flushed batch of 100 documents for '{FilePath}' in {ElapsedSeconds:F2}s", largeFile, batchStopwatch.Elapsed.TotalSeconds);
+                                docs.Clear();
+                                GC.Collect();
+                                batchStopwatch.Restart();
+
+                                if (batchStopwatch.Elapsed.TotalMinutes > 5)
+                                {
+                                    Log.Warning("Batch processing for '{FilePath}' took over 5 minutes—potential stall detected.", largeFile);
+                                }
+
+                                // Process small files in parallel during large file pauses
+                                if (smallFiles.Count > 0 && PdfHelper.IsMemorySafe())
+                                {
+                                    Parallel.ForEach(smallFiles, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount / 2 }, smallFile =>
+                                    {
+                                        try
+                                        {
+                                            var smallDocs = new List<Document>();
+                                            int smallDocCount = 0;
+                                            var smallBatchStopwatch = Stopwatch.StartNew();
+
+                                            var smallPages = PdfHelper.ExtractTextFromPdfPages(smallFile).Result;
+                                            foreach (var smallPage in smallPages)
+                                            {
+                                                var doc = new Document
+                                                {
+                                                    new StringField("FilePath", smallFile, Field.Store.YES),
+                                                    new StringField("RelativePath", Path.GetRelativePath(rootFolderPath, smallFile), Field.Store.YES),
+                                                    new Int32Field("PageNumber", smallPage.Key, Field.Store.YES),
+                                                    new TextField("Content", smallPage.Value ?? "", Field.Store.YES)
+                                                };
+                                                smallDocs.Add(doc);
+                                                smallDocCount++;
+
+                                                if (smallDocs.Count >= 100)
+                                                {
+                                                    lock (writer)
+                                                    {
+                                                        writer.AddDocuments(smallDocs);
+                                                        writer.Flush(triggerMerge: false, applyAllDeletes: false);
+                                                    }
+                                                    Log.Information("Flushed batch of 100 documents for '{FilePath}' in {ElapsedSeconds:F2}s", smallFile, smallBatchStopwatch.Elapsed.TotalSeconds);
+                                                    smallDocs.Clear();
+                                                    GC.Collect();
+                                                    smallBatchStopwatch.Restart();
+                                                }
+                                            }
+
+                                            if (smallDocs.Count != 0)
+                                            {
+                                                lock (writer)
+                                                {
+                                                    writer.AddDocuments(smallDocs);
+                                                    writer.Flush(triggerMerge: false, applyAllDeletes: false);
+                                                }
+                                                Log.Information("Flushed final batch of {DocCount} documents for '{FilePath}' in {ElapsedSeconds:F2}s", smallDocs.Count, smallFile, smallBatchStopwatch.Elapsed.TotalSeconds);
+                                                smallDocs.Clear();
+                                                GC.Collect();
+                                            }
+
+                                            lock (writer)
+                                            {
+                                                writer.Commit();
+                                            }
+                                            Log.Information("Committed '{FilePath}' with {DocCount} documents.", smallFile, smallDocCount);
+                                            lock (lockObject)
+                                            {
+                                                updatedMetadata[smallFile] = File.GetLastWriteTimeUtc(smallFile);
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            Log.Error(ex, "Error processing small file '{FilePath}'", smallFile);
+                                        }
+                                    });
+                                    smallFiles.Clear(); // Clear processed small files
+                                }
+                            }
                         }
 
                         if (docs.Count != 0)
                         {
-                            allDocs.Add(docs);
-                            updatedMetadata[pdfFile] = File.GetLastWriteTimeUtc(pdfFile);
+                            lock (writer)
+                            {
+                                writer.AddDocuments(docs);
+                                writer.Flush(triggerMerge: false, applyAllDeletes: false);
+                            }
+                            Log.Information("Flushed final batch of {DocCount} documents for '{FilePath}' in {ElapsedSeconds:F2}s", docs.Count, largeFile, batchStopwatch.Elapsed.TotalSeconds);
+                            docs.Clear();
+                            GC.Collect();
+                        }
+
+                        lock (writer)
+                        {
+                            writer.Commit();
+                        }
+                        Log.Information("Committed '{FilePath}' with {DocCount} documents.", largeFile, docCount);
+                        lock (lockObject)
+                        {
+                            updatedMetadata[largeFile] = File.GetLastWriteTimeUtc(largeFile);
                         }
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"Error processing file '{pdfFile}': {ex.Message}");
+                        Log.Error(ex, "Error processing large file '{FilePath}'", largeFile);
                     }
-                });
-                // Write all documents in a single batch outside the parallel loop
-                foreach (var docs in allDocs)
-                {
-                    writer.AddDocuments(docs);
                 }
 
-                // Flush and commit the changes
+                // Process remaining small files
+                if (smallFiles.Count > 0)
+                {
+                    Parallel.ForEach(smallFiles, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount / 2 }, smallFile =>
+                    {
+                        if (PdfHelper.IsMemorySafe())
+                        {
+                            try
+                            {
+                                var smallDocs = new List<Document>();
+                                int smallDocCount = 0;
+                                var smallBatchStopwatch = Stopwatch.StartNew();
+
+                                var smallPages = PdfHelper.ExtractTextFromPdfPages(smallFile).Result;
+                                foreach (var smallPage in smallPages)
+                                {
+                                    var doc = new Document
+                                    {
+                                        new StringField("FilePath", smallFile, Field.Store.YES),
+                                        new StringField("RelativePath", Path.GetRelativePath(rootFolderPath, smallFile), Field.Store.YES),
+                                        new Int32Field("PageNumber", smallPage.Key, Field.Store.YES),
+                                        new TextField("Content", smallPage.Value ?? "", Field.Store.YES)
+                                    };
+                                    smallDocs.Add(doc);
+                                    smallDocCount++;
+
+                                    if (smallDocs.Count >= 100)
+                                    {
+                                        lock (writer)
+                                        {
+                                            writer.AddDocuments(smallDocs);
+                                            writer.Flush(triggerMerge: false, applyAllDeletes: false);
+                                        }
+                                        Log.Information("Flushed batch of 100 documents for '{FilePath}' in {ElapsedSeconds:F2}s", smallFile, smallBatchStopwatch.Elapsed.TotalSeconds);
+                                        smallDocs.Clear();
+                                        GC.Collect();
+                                        smallBatchStopwatch.Restart();
+                                    }
+                                }
+
+                                if (smallDocs.Count != 0)
+                                {
+                                    lock (writer)
+                                    {
+                                        writer.AddDocuments(smallDocs);
+                                        writer.Flush(triggerMerge: false, applyAllDeletes: false);
+                                    }
+                                    Log.Information("Flushed final batch of {DocCount} documents for '{FilePath}' in {ElapsedSeconds:F2}s", smallDocs.Count, smallFile, smallBatchStopwatch.Elapsed.TotalSeconds);
+                                    smallDocs.Clear();
+                                    GC.Collect();
+                                }
+
+                                lock (writer)
+                                {
+                                    writer.Commit();
+                                }
+                                Log.Information("Committed '{FilePath}' with {DocCount} documents.", smallFile, smallDocCount);
+                                lock (lockObject)
+                                {
+                                    updatedMetadata[smallFile] = File.GetLastWriteTimeUtc(smallFile);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Log.Error(ex, "Error processing small file '{FilePath}'", smallFile);
+                            }
+                        }
+                    });
+                }
+
+                Log.Information("Parallel processing complete. Finalizing index...");
                 writer.Flush(triggerMerge: true, applyAllDeletes: false);
                 writer.Commit();
+                Log.Information("Committed final changes to index.");
 
-                // Update the shared metadata dictionary
+                // Calculate resource usage
+                var process = Process.GetCurrentProcess();
+                long totalMemory = (long)(new ComputerInfo().TotalPhysicalMemory);
+                double ramUsagePercent = (double)process.WorkingSet64 / totalMemory;
+                double cpuUsagePercent = Helpers.Helpers.GetCpuUsage(process); // Assuming Helpers.GetCpuUsage is defined elsewhere
+
                 lock (metadata)
                 {
                     foreach (var entry in updatedMetadata)
@@ -180,11 +387,12 @@ namespace PDFSearch.Utilities
                     }
                 }
 
-                Console.WriteLine($"Folder '{folderToIndex}' indexed: {newOrUpdatedFiles.Count} files.");
+                Log.Information("Folder '{Folder}' indexed: {FileCount} files in {ElapsedSeconds:F2}s (RAM: {RamUsagePercent:P0}, CPU: {CpuUsagePercent:F1}%)",
+                    folderToIndex, newOrUpdatedFiles.Count, stopwatch.Elapsed.TotalSeconds, ramUsagePercent, cpuUsagePercent);
             }
             else
             {
-                Console.WriteLine($"No new or updated files in folder '{folderToIndex}'.");
+                Log.Information("No new or updated files in folder '{Folder}'.", folderToIndex);
             }
         }
 
@@ -198,23 +406,27 @@ namespace PDFSearch.Utilities
             {
                 folderStructure.AddRange(newFolders);
                 FolderManager.SaveFolderStructure(folderPath);
-                Console.WriteLine($"Added {newFolders.Count} new folders to the folder structure.");
+                Log.Information("Added {NewFolderCount} new folders to the structure.", newFolders.Count);
             }
             else
             {
-                Console.WriteLine("No new folders to add.");
+                Log.Information("No new folders to add.");
             }
         }
 
         private static double GetOptimalRamBuffer()
         {
             long totalMemoryMB = (long)(new ComputerInfo().TotalPhysicalMemory / (1024 * 1024));
-            return totalMemoryMB switch
+            double baseBuffer = totalMemoryMB switch
             {
-                >= 16000 => 1024,  // 16GB+ → 1GB Buffer
-                >= 8000 => 512,    // 8GB+ → 512MB Buffer
-                _ => 256           // Below 8GB → 256MB Buffer
+                >= 32000 => 2048,
+                >= 16000 => 1024,
+                >= 9000 => 768,
+                >= 7000 => 512, // Your 7.5 GB PC
+                >= 4000 => 256,
+                _ => 128
             };
+            return baseBuffer * 2; // 1024 MB for your PC
         }
     }
 }

@@ -1,11 +1,8 @@
-﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
-VisualStudioVersion = 17.11.35431.28
+VisualStudioVersion = 17.5.2.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PDFSearch", "PDFSearch\PDFSearch.csproj", "{B6D52F5C-2345-4264-9548-7E21E20047D1}"
-EndProject
-Project("{54435603-DBB4-11D2-8724-00A0C9A8B90C}") = "FindInPDFs", "FindInPDFs\FindInPDFs.vdproj", "{E260165B-20E7-4B75-93FE-C32661DDC5C5}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PDFSearch", "PDFSearch\PDFSearch.csproj", "{4E7A80CF-2BAC-33AB-DED8-BB4FEF497C23}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -13,17 +10,15 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{B6D52F5C-2345-4264-9548-7E21E20047D1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{B6D52F5C-2345-4264-9548-7E21E20047D1}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{B6D52F5C-2345-4264-9548-7E21E20047D1}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{B6D52F5C-2345-4264-9548-7E21E20047D1}.Release|Any CPU.Build.0 = Release|Any CPU
-		{E260165B-20E7-4B75-93FE-C32661DDC5C5}.Debug|Any CPU.ActiveCfg = Release
-		{E260165B-20E7-4B75-93FE-C32661DDC5C5}.Release|Any CPU.ActiveCfg = Release
+		{4E7A80CF-2BAC-33AB-DED8-BB4FEF497C23}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4E7A80CF-2BAC-33AB-DED8-BB4FEF497C23}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4E7A80CF-2BAC-33AB-DED8-BB4FEF497C23}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4E7A80CF-2BAC-33AB-DED8-BB4FEF497C23}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
-		SolutionGuid = {FCBF2025-F362-4735-A1E2-874F2DD62116}
+		SolutionGuid = {2860ADE0-B69C-4379-A693-AC31A3B044B3}
 	EndGlobalSection
 EndGlobal

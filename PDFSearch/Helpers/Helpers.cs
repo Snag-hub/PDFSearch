@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -34,6 +35,29 @@ internal static class Helpers
         {
             // If two or fewer directories, return them as is
             return fullPath;
+        }
+    }
+
+    // Helper method to estimate CPU usage
+    public static double GetCpuUsage(Process process)
+    {
+        try
+        {
+            var startTime = DateTime.UtcNow;
+            var startCpuTime = process.TotalProcessorTime;
+            Thread.Sleep(500); // Wait briefly to measure usage
+            var endTime = DateTime.UtcNow;
+            var endCpuTime = process.TotalProcessorTime;
+
+            var cpuTimeUsed = (endCpuTime - startCpuTime).TotalMilliseconds;
+            var elapsedTime = (endTime - startTime).TotalMilliseconds;
+            var cpuUsage = (cpuTimeUsed / (elapsedTime * Environment.ProcessorCount)) * 100;
+
+            return Math.Min(cpuUsage, 100); // Cap at 100%
+        }
+        catch
+        {
+            return 0; // Fallback if measurement fails
         }
     }
 

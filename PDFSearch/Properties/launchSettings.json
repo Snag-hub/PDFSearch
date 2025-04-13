@@ -3,7 +3,9 @@
     "PDFSearch": {
       "commandName": "Project",
       //"workingDirectory": "E:\\Freelance Work\\Farohar\\Farohar E-Document Library_Sample",
-      "workingDirectory": "D:\\MyStuff\\Farohar E-Document Library_Sample"
+      //"workingDirectory": "D:\\MyStuff\\Farohar E-Document Library_Sample"
+      "workingDirectory": "F:\\E-Doc_Sample"
+      //"workingDirectory": "E:\\gg"
     }
   }
 }
