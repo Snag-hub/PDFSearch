@@ -4,6 +4,7 @@ using PDFSearch.Acrobat;
 using System.Configuration;
 using System.Runtime.InteropServices;
 using System.Text;
+using FindInPDFs.Utilities;
 
 namespace PDFSearch;
 
