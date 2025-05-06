@@ -1,144 +1,378 @@
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.VisualBasic.Devices;
-using Serilog;
 using UglyToad.PdfPig;
+using UglyToad.PdfPig.Content;
+using UglyToad.PdfPig.Writer;
 
 namespace FindInPDFs.Utilities;
 
 public static class PdfHelper
 {
-    public const int LargeFilePageThreshold = 400; // Pages
-    private const long LargeFileSizeThreshold = 200 * 1024 * 1024; // 200 MB
+    private const long SmallFileSizeThreshold = 10 * 1024 * 1024; // 10 MB, files < this use parallel batch processing
+    private const int MaxDegreeOfParallelism = 4; // Limit parallel tasks
+    private const int PagesPerBatch = 100; // Process 100 pages per batch for small files
+    private const int PagesPerBatchLarge = 20; // Smaller batches for large files if no splitting
+    private const int PagesPerChunk = 200; // Pages per chunk for splitting
+    private const long MinTempDiskSpace = 1L * 1024 * 1024 * 1024; // 1 GB required for temp files
+    private const int OpenTimeoutMs = 2000; // 2-second timeout for opening
 
-    public static Dictionary<string, Dictionary<int, string>> ExtractTextFromMultipleDirectories(
-        IEnumerable<string> directories)
+    public static Dictionary<string, Dictionary<int, string>> ExtractTextFromMultipleDirectories(IEnumerable<string> directories)
     {
         var extractedData = new ConcurrentDictionary<string, Dictionary<int, string>>();
-        var pdfFiles = new List<(string Path, long Size, int? PageCount)>();
+        var skippedFiles = new List<string>();
 
         foreach (var directory in directories)
         {
             if (!Directory.Exists(directory))
             {
-                Log.Error("Directory does not exist: {Directory}", directory);
+                Console.WriteLine($"Directory does not exist: {directory}");
                 continue;
             }
 
-            pdfFiles.AddRange(Directory.GetFiles(directory, "*.pdf", SearchOption.AllDirectories)
-                .Select<string, (string Path, long Size, int? PageCount)>(file =>
-                    (Path: file, Size: new FileInfo(file).Length, PageCount: null)));
+            var pdfFiles = Directory.GetFiles(directory, "*.pdf", SearchOption.AllDirectories)
+                .Select(file => (Path: file, Size: new FileInfo(file).Length))
+                .ToList();
+
+            var smallFiles = pdfFiles
+                .Where(f => f.Size < SmallFileSizeThreshold)
+                .ToList();
+            var largeFiles = pdfFiles
+                .Where(f => f.Size >= SmallFileSizeThreshold)
+                .ToList();
+
+            if (smallFiles.Any())
+            {
+                Console.WriteLine($"Processing {smallFiles.Count} small files (< 10MB) in parallel...");
+                var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = MaxDegreeOfParallelism };
+                Parallel.ForEach(smallFiles, parallelOptions, file =>
+                {
+                    try
+                    {
+                        Console.WriteLine($"Processing small file: {file.Path}");
+                        var textByPage = ExtractTextFromPdf(file.Path, file.Size);
+
+                        if (textByPage.Any())
+                        {
+                            extractedData[file.Path] = textByPage;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error processing file '{file.Path}': {ex.Message}");
+                    }
+                });
+            }
+
+            if (largeFiles.Any())
+            {
+                Console.WriteLine($"Processing {largeFiles.Count} large files (≥ 10MB) sequentially...");
+                foreach (var file in largeFiles)
+                {
+                    try
+                    {
+                        Console.WriteLine($"Processing large file: {file.Path}");
+                        var textByPage = ExtractTextFromLargePdf(file.Path, file.Size);
+
+                        if (textByPage.Any())
+                        {
+                            extractedData[file.Path] = textByPage;
+                        }
+                        else
+                        {
+                            Console.WriteLine($"No text extracted from '{file.Path}'. File may have been skipped due to timeout.");
+                            skippedFiles.Add(file.Path);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error processing file '{file.Path}': {ex.Message}");
+                        skippedFiles.Add(file.Path);
+                    }
+                }
+            }
         }
 
-        // Classify files
-        var largeFiles = pdfFiles.Where(file => file.Size > LargeFileSizeThreshold).ToList();
-        var smallFiles = pdfFiles.Except(largeFiles).ToList();
-
-        // Process small files in parallel
-        Parallel.ForEach(smallFiles, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount / 2 }, file =>
+        if (skippedFiles.Any())
         {
-            try
+            Console.WriteLine("The following files were skipped due to opening timeout or errors and require external splitting (e.g., with pdftk):");
+            foreach (var file in skippedFiles)
             {
-                var textByPage = ExtractTextFromPdfWithBatching(file.Path).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
-
-                if (textByPage.Count > 0)
-                {
-                    extractedData[file.Path] = textByPage;
-                }
+                Console.WriteLine($"- {file}");
             }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "Error processing small file '{FilePath}'", file.Path);
-            }
-        });
-
-        // Process large files sequentially with page range parallelism
-        foreach (var largeFile in largeFiles)
-        {
-            try
-            {
-                Log.Information("Processing large file: {FilePath} (Size: {Size} MB)", largeFile.Path,
-                    largeFile.Size / (1024 * 1024));
-
-                var textByPage = ExtractTextFromPdfWithBatching(largeFile.Path);
-                if (textByPage.Count > 0)
-                {
-                    extractedData[largeFile.Path] = textByPage.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "Error processing large file '{FilePath}'", largeFile.Path);
-            }
+            Console.WriteLine("Example pdftk command: pdftk input.pdf cat 1-200 output chunk_01.pdf");
         }
 
         return extractedData.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
     }
 
-    public static Dictionary<int, string> ExtractTextFromPdfWithBatching(string pdfFilePath)
+    public static Dictionary<int, string> ExtractTextFromLargePdf(string pdfFilePath, long fileSize)
     {
-        var result = new ConcurrentDictionary<int, string>();
-        const int batchSize = 100; // Commit every 50 pages
-        var currentBatch = new List<KeyValuePair<int, string>>();
-
+        var stopwatch = Stopwatch.StartNew();
         try
         {
-            using var pdfDoc = PdfDocument.Open(pdfFilePath);
-            var totalPages = pdfDoc.NumberOfPages;
-
-            Log.Information("Extracting text from '{PdfFile}' with {PageCount} pages", pdfFilePath, totalPages);
-
-            for (var pageNum = 1; pageNum <= totalPages; pageNum++)
+            // Try opening with a 2-second timeout
+            PdfDocument pdfDoc = null;
+            var cts = new CancellationTokenSource();
+            var openTask = Task.Run(() =>
             {
-                try
+                pdfDoc = PdfDocument.Open(pdfFilePath, new ParsingOptions { UseLenientParsing = true });
+            }, cts.Token);
+
+            if (openTask.Wait(OpenTimeoutMs))
+            {
+                // Opening succeeded within 2 seconds
+                Console.WriteLine($"Opened '{pdfFilePath}' in {stopwatch.ElapsedMilliseconds} ms");
+                using (pdfDoc)
                 {
-                    var page = pdfDoc.GetPage(pageNum);
-                    var extractedText = page.Text;
+                    int totalPages = pdfDoc.NumberOfPages;
+                    Console.WriteLine($"Estimated {totalPages} pages for '{pdfFilePath}'");
 
-                    currentBatch.Add(new KeyValuePair<int, string>(pageNum, extractedText));
-
-                    // Commit the batch if it reaches the batch size
-                    if (currentBatch.Count >= batchSize)
+                    if (totalPages > PagesPerChunk && fileSize > 100 * 1024 * 1024) // Split if > 200 pages and > 100 MB
                     {
-                        CommitBatch(currentBatch, result);
-                        currentBatch.Clear(); // Clear the batch
+                        Console.WriteLine($"Large PDF '{pdfFilePath}' exceeds {PagesPerChunk} pages. Splitting into chunks...");
+
+                        // Check temp directory space
+                        var tempPath = Path.GetTempPath();
+                        var driveInfo = new DriveInfo(Path.GetPathRoot(tempPath));
+                        if (driveInfo.AvailableFreeSpace < MinTempDiskSpace)
+                        {
+                            Console.WriteLine($"Insufficient disk space in temp directory ({tempPath}): {driveInfo.AvailableFreeSpace / (1024 * 1024)} MB available, {MinTempDiskSpace / (1024 * 1024)} MB required. Processing without splitting.");
+                            return ExtractTextFromPdf(pdfFilePath, fileSize, PagesPerBatchLarge);
+                        }
+
+                        var chunkFiles = SplitPdf(pdfDoc, pdfFilePath, PagesPerChunk);
+                        if (!chunkFiles.Any())
+                        {
+                            Console.WriteLine($"Splitting failed for '{pdfFilePath}'. Processing without splitting.");
+                            return ExtractTextFromPdf(pdfFilePath, fileSize, PagesPerBatchLarge);
+                        }
+
+                        var result = new ConcurrentDictionary<int, string>();
+                        int globalPageOffset = 0;
+
+                        foreach (var chunkFile in chunkFiles)
+                        {
+                            try
+                            {
+                                var chunkPages = ExtractTextFromPdf(chunkFile, new FileInfo(chunkFile).Length);
+                                foreach (var page in chunkPages)
+                                {
+                                    result[page.Key + globalPageOffset] = page.Value;
+                                }
+                                globalPageOffset += chunkPages.Count;
+
+                                // Force garbage collection
+                                GC.Collect();
+                                GC.WaitForPendingFinalizers();
+                            }
+                            finally
+                            {
+                                // Clean up chunk file
+                                if (File.Exists(chunkFile))
+                                {
+                                    try
+                                    {
+                                        File.Delete(chunkFile);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Console.WriteLine($"Failed to delete chunk '{chunkFile}': {ex.Message}");
+                                    }
+                                }
+                            }
+                        }
+
+                        Console.WriteLine($"Completed processing chunks for '{pdfFilePath}'. Total pages: {result.Count}, Time: {stopwatch.ElapsedMilliseconds} ms");
+                        return result.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
                     }
-
-                    Log.Debug("Extracted text from page {PageNumber} of '{PdfFile}'", pageNum, pdfFilePath);
-                }
-                catch (Exception ex)
-                {
-                    Log.Warning("Failed to extract page {PageNumber} of '{PdfFile}': {Message}", pageNum, pdfFilePath, ex.Message);
                 }
             }
-
-            // Commit any remaining pages in the batch
-            if (currentBatch.Count != 0)
+            else
             {
-                CommitBatch(currentBatch, result);
+                // Opening timed out after 2 seconds
+                cts.Cancel();
+                Console.WriteLine($"Opening '{pdfFilePath}' exceeded {OpenTimeoutMs} ms. Skipping processing. Please pre-split into 200-page chunks using pdftk.");
+                return new Dictionary<int, string>(); // Return empty to skip
             }
-
-            Log.Information("Completed extraction for '{PdfFile}' in {ElapsedSeconds:F2} seconds",
-                pdfFilePath, Stopwatch.StartNew().Elapsed.TotalSeconds);
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to process '{PdfFile}'", pdfFilePath);
+            Console.WriteLine($"Failed to process '{pdfFilePath}' for opening or splitting: {ex.Message}. Skipping processing.");
+            return new Dictionary<int, string>(); // Return empty to skip
         }
 
+        // Fallback (only if explicitly needed, currently skipped)
+        return ExtractTextFromPdf(pdfFilePath, fileSize, PagesPerBatchLarge);
+    }
+
+    private static Dictionary<int, string> ExtractTextFromPdf(string pdfFilePath, long fileSize = -1, int pagesPerBatch = PagesPerBatch)
+    {
+        var result = new ConcurrentDictionary<int, string>();
+        var stopwatch = Stopwatch.StartNew();
+
+        try
+        {
+            // Open PDF with lenient parsing
+            var openStopwatch = Stopwatch.StartNew();
+            using var pdfDoc = PdfDocument.Open(pdfFilePath, new ParsingOptions
+            {
+                UseLenientParsing = true // Allow lenient parsing
+            });
+            Console.WriteLine($"Opened '{pdfFilePath}' in {openStopwatch.ElapsedMilliseconds} ms");
+
+            // Process pages in batches
+            bool useParallel = fileSize >= 0 && fileSize < SmallFileSizeThreshold && IsMemorySafe();
+            int pageNum = 1;
+
+            while (true)
+            {
+                // Collect up to pagesPerBatch pages
+                var batchPages = new List<(int PageNum, Page Page)>();
+                int batchStart = pageNum;
+                int batchEnd = batchStart + pagesPerBatch - 1;
+
+                var batchStopwatch = Stopwatch.StartNew();
+                try
+                {
+                    for (; pageNum <= batchEnd && pageNum <= int.MaxValue; pageNum++)
+                    {
+                        try
+                        {
+                            var page = pdfDoc.GetPage(pageNum);
+                            batchPages.Add((pageNum, page));
+                        }
+                        catch (ArgumentOutOfRangeException)
+                        {
+                            // End of pages reached
+                            break;
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Failed to access page {pageNum} of '{pdfFilePath}': {ex.Message}");
+                        }
+                    }
+                }
+                catch (ArgumentOutOfRangeException)
+                {
+                    // End of pages reached
+                    break;
+                }
+
+                if (!batchPages.Any())
+                {
+                    break; // No more pages
+                }
+
+                Console.WriteLine($"Processing batch: pages {batchStart} to {pageNum - 1} of '{pdfFilePath}' ({batchPages.Count} pages)");
+
+                // Extract text from batch
+                if (useParallel)
+                {
+                    Console.WriteLine($"Using parallel batch processing for small file: {pdfFilePath}");
+                    var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = MaxDegreeOfParallelism };
+                    Parallel.ForEach(batchPages, parallelOptions, pageInfo =>
+                    {
+                        try
+                        {
+                            result[pageInfo.PageNum] = pageInfo.Page.Text;
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Failed to extract text from page {pageInfo.PageNum} of '{pdfFilePath}': {ex.Message}");
+                        }
+                    });
+                }
+                else
+                {
+                    Console.WriteLine($"Using sequential batch processing for large file: {pdfFilePath}");
+                    foreach (var pageInfo in batchPages)
+                    {
+                        try
+                        {
+                            result[pageInfo.PageNum] = pageInfo.Page.Text;
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Failed to extract text from page {pageInfo.PageNum} of '{pdfFilePath}': {ex.Message}");
+                        }
+                    }
+                }
+
+                Console.WriteLine($"Processed batch {batchStart} to {pageNum - 1} in {batchStopwatch.ElapsedMilliseconds} ms");
+
+                // Memory check for large files
+                if (!useParallel && !IsMemorySafe())
+                {
+                    Console.WriteLine($"Memory usage high for '{pdfFilePath}'. Forcing garbage collection...");
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
+                }
+            }
+
+            Console.WriteLine($"Completed extraction for '{pdfFilePath}'. Total pages extracted: {result.Count}, Time: {stopwatch.ElapsedMilliseconds} ms");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to process '{pdfFilePath}': {ex.Message}");
+        }
+
+        stopwatch.Stop();
         return result.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
     }
 
-    private static void CommitBatch(List<KeyValuePair<int, string>> batch, ConcurrentDictionary<int, string> result)
+    private static List<string> SplitPdf(PdfDocument pdfDoc, string pdfFilePath, int pagesPerChunk)
     {
-        lock (result)
+        var chunkFiles = new List<string>();
+        try
         {
-            foreach (var kvp in batch)
+            int totalPages = pdfDoc.NumberOfPages;
+            int chunkCount = (int)Math.Ceiling((double)totalPages / pagesPerChunk);
+
+            for (int chunk = 0; chunk < chunkCount; chunk++)
             {
-                result.TryAdd(kvp.Key, kvp.Value);
+                int startPage = chunk * pagesPerChunk + 1;
+                int endPage = Math.Min(startPage + pagesPerChunk - 1, totalPages);
+                var chunkFile = Path.Combine(Path.GetTempPath(), $"{Path.GetFileNameWithoutExtension(pdfFilePath)}_chunk_{chunk + 1}.pdf");
+
+                using var builder = new PdfDocumentBuilder();
+                for (int pageNum = startPage; pageNum <= endPage; pageNum++)
+                {
+                    builder.AddPage(pdfDoc, pageNum);
+                }
+
+                File.WriteAllBytes(chunkFile, builder.Build());
+                chunkFiles.Add(chunkFile);
+                Console.WriteLine($"Created chunk '{chunkFile}' (pages {startPage} to {endPage})");
+
+                // Force garbage collection
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
             }
-            Log.Information("Committed batch of {BatchSize} pages to memory.", batch.Count);
         }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to split '{pdfFilePath}': {ex.Message}");
+            foreach (var chunkFile in chunkFiles)
+            {
+                if (File.Exists(chunkFile))
+                {
+                    try
+                    {
+                        File.Delete(chunkFile);
+                    }
+                    catch (Exception deleteEx)
+                    {
+                        Console.WriteLine($"Failed to delete chunk '{chunkFile}': {deleteEx.Message}");
+                    }
+                }
+            }
+            chunkFiles.Clear();
+        }
+
+        return chunkFiles;
     }
 
     public static bool IsMemorySafe()
@@ -146,6 +380,6 @@ public static class PdfHelper
         var computerInfo = new ComputerInfo();
         var process = Process.GetCurrentProcess();
         var ramUsagePercent = (double)process.WorkingSet64 / computerInfo.TotalPhysicalMemory;
-        return ramUsagePercent < 0.8; // Adjust if needed
+        return ramUsagePercent < 0.85; // Less conservative threshold
     }
 }
