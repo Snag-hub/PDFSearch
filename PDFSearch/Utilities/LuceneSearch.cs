@@ -8,139 +8,141 @@ using Lucene.Net.Store;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using Lucene.Net.Documents;
 using Directory = System.IO.Directory;
 
 namespace PDFSearch.Utilities;
 
 public class LuceneSearcher
 {
-    public static List<SearchResult> SearchInDirectory(string queryText, string folderPath, bool matchWord = false, bool matchCase = false, string? filePath = null)
+    public List<SearchResult> SearchInDirectory(string queryText, string folderPath, bool matchWord = false, bool matchCase = false, string? filePath = null)
     {
         try
         {
             // Get the unique index path using FolderUtility
             FolderUtility.EnsureBasePathExists();
-            string uniqueIndexPath = FolderUtility.GetFolderForPath(folderPath);
+            var uniqueIndexPath = FolderUtility.GetFolderForPath(folderPath);
 
             // Check if the index directory exists
             if (!Directory.Exists(uniqueIndexPath))
                 throw new DirectoryNotFoundException($"No index found for directory: {folderPath}");
 
-            using var dir = FSDirectory.Open(uniqueIndexPath);
+            // Get all subfolder index directories (e.g., index_folder_{name})
+            var indexFolders = Directory.GetDirectories(uniqueIndexPath, "index_folder_*", SearchOption.TopDirectoryOnly);
+            if (indexFolders.Length == 0)
+                throw new DirectoryNotFoundException($"No subfolder indexes found in: {uniqueIndexPath}");
 
-            // Use a custom analyzer for case-sensitive search
+            // Create analyzer based on case sensitivity
             Analyzer analyzer = matchCase ? new CaseSensitiveStandardAnalyzer(Lucene.Net.Util.LuceneVersion.LUCENE_48)
-                                          : new StandardAnalyzer(Lucene.Net.Util.LuceneVersion.LUCENE_48);
+                                         : new StandardAnalyzer(Lucene.Net.Util.LuceneVersion.LUCENE_48);
 
+            // Prepare query parser
             var parser = new QueryParser(Lucene.Net.Util.LuceneVersion.LUCENE_48, "Content", analyzer);
-
-            // Modify the query based on MatchWord option
             if (matchWord)
             {
-                // Wrap the query in double quotes for whole-word matching
                 queryText = $"\"{queryText}\"";
             }
-
             var query = parser.Parse(queryText);
 
-            using var reader = DirectoryReader.Open(dir);
-            var searcher = new IndexSearcher(reader);
-
-            // Search for all matches first
-            var hits = searcher.Search(query, int.MaxValue).ScoreDocs;
-            var results = new List<SearchResult>();
-
-            foreach (var hit in hits)
+            // Open readers for all subfolder indexes
+            var readers = new List<IndexReader>();
+            foreach (var indexFolder in indexFolders)
             {
-                var doc = searcher.Doc(hit.Doc);
-
-                // Get the content of the document and extract a snippet
-                var content = doc.Get("Content");
-                var snippet = ExtractSnippet(content, queryText, matchCase);
-
-                string documentFilePath = doc.Get("FilePath");
-
-                // If filePath is provided, filter results based on it
-                if (!string.IsNullOrEmpty(filePath) && documentFilePath.StartsWith(filePath, StringComparison.OrdinalIgnoreCase))
+                try
                 {
-                    results.Add(new SearchResult
-                    {
-                        FilePath = documentFilePath,
-                        RelativePath = doc.Get("RelativePath"),
-                        PageNumber = int.Parse(doc.Get("PageNumber")),
-                        Snippet = snippet
-                    });
+                    var dir = FSDirectory.Open(indexFolder);
+                    var reader = DirectoryReader.Open(dir);
+                    readers.Add(reader);
                 }
-                // If filePath is not provided, include all results from the folderPath index
-                else if (string.IsNullOrEmpty(filePath))
+                catch (Exception ex)
                 {
-                    results.Add(new SearchResult
-                    {
-                        FilePath = documentFilePath,
-                        RelativePath = doc.Get("RelativePath"),
-                        PageNumber = int.Parse(doc.Get("PageNumber")),
-                        Snippet = snippet
-                    });
+                    Console.WriteLine($"[WARNING] Failed to open index {indexFolder}: {ex.Message}");
+                    // Continue with other indexes
                 }
             }
+
+            if (readers.Count == 0)
+                throw new Exception("No valid index readers could be opened.");
+
+            // Use MultiReader to search across all indexes
+            using var multiReader = new MultiReader(readers.ToArray(), true); // true to close readers
+            var searcher = new IndexSearcher(multiReader);
+
+            // Search with a limit of 1000 hits
+            var hits = searcher.Search(query, 1000).ScoreDocs;
+            var results = (from hit in hits
+            let doc = searcher.Doc(hit.Doc)
+            let content = doc.Get("Content") ?? ""
+            let snippet = ExtractSnippet(content, queryText, matchCase)
+            let documentFilePath = doc.Get("FilePath") ?? ""
+            where string.IsNullOrEmpty(filePath) || documentFilePath.StartsWith(filePath, StringComparison.OrdinalIgnoreCase)
+            select new SearchResult
+            {
+                FilePath = documentFilePath,
+                RelativePath = doc.Get("RelativePath") ?? "",
+                PageNumber = int.TryParse(doc.Get("PageNumber"), out var page) ? page : 0,
+                Snippet = snippet,
+                Score = hit.Score
+            }).ToList();
+
+            // Remove duplicates (same FilePath and PageNumber) and sort by score
+            results = results
+                .GroupBy(r => (r.FilePath, r.PageNumber))
+                .Select(g => g.OrderByDescending(r => r.Score).First())
+                .OrderByDescending(r => r.Score)
+                .ToList();
 
             return results;
         }
         catch (Exception ex)
         {
-            throw; // You might want to log the exception before rethrowing it
+            Console.WriteLine($"[ERROR] Search failed: {ex.Message}");
+            throw;
         }
     }
 
     private static string ExtractSnippet(string content, string searchTerm, bool matchCase)
     {
-        // Look for the search term in the content and extract a snippet
-        int termIndex = matchCase ? content.IndexOf(searchTerm)
-                                  : content.IndexOf(searchTerm, StringComparison.OrdinalIgnoreCase);
+        var termIndex = matchCase ? content.IndexOf(searchTerm)
+                                 : content.IndexOf(searchTerm, StringComparison.OrdinalIgnoreCase);
 
         if (termIndex == -1)
-            return string.Empty;
+            return "";
 
-        // Define a snippet length (characters after the term)
-        int snippetLength = 100;
+        var snippetLength = 100;
+        var start = Math.Max(0, termIndex - 50);
+        var end = Math.Min(termIndex + searchTerm.Length + snippetLength, content.Length);
+        var snippet = content.Substring(start, end - start);
 
-        // Start the snippet from the position of the search term
-        int start = Math.Max(0, termIndex - 50); // Include some context before the term
-        // End the snippet at the position of the term + 100 characters (or the end of content)
-        int end = Math.Min(termIndex + searchTerm.Length + snippetLength, content.Length);
-
-        // Extract the snippet from the content
-        string snippet = content.Substring(start, end - start);
-
-        // Optionally, highlight the search term in the snippet
+        // Highlight search term
         snippet = snippet.Replace(searchTerm, $"<b>{searchTerm}</b>", matchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase);
-
         return snippet;
     }
 }
 
 public class SearchResult
 {
-    public string FilePath { get; set; }
-    public string RelativePath { get; set; }
-    public string Snippet { get; set; }
+    public string FilePath { get; set; } = "";
+    public string RelativePath { get; set; } = "";
+    public string Snippet { get; set; } = "";
     public int PageNumber { get; set; }
+    public float Score { get; set; }
 }
 
-// Custom analyzer for case-sensitive search
-public class CaseSensitiveStandardAnalyzer(Lucene.Net.Util.LuceneVersion matchVersion) : Analyzer
+public class CaseSensitiveStandardAnalyzer : Analyzer
 {
-    private readonly Lucene.Net.Util.LuceneVersion _matchVersion = matchVersion;
+    private readonly Lucene.Net.Util.LuceneVersion _matchVersion;
+
+    public CaseSensitiveStandardAnalyzer(Lucene.Net.Util.LuceneVersion matchVersion)
+    {
+        _matchVersion = matchVersion;
+    }
 
     protected override TokenStreamComponents CreateComponents(string fieldName, TextReader reader)
     {
-        // Use StandardTokenizer for tokenization
         var source = new StandardTokenizer(_matchVersion, reader);
-
-        // Apply StandardFilter for basic normalization
         TokenStream result = new StandardFilter(_matchVersion, source);
-
-        // Skip LowerCaseFilter to preserve case sensitivity
         return new TokenStreamComponents(source, result);
     }
 }

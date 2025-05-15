@@ -5,6 +5,7 @@ using System.Configuration;
 using System.Runtime.InteropServices;
 using System.Text;
 using FindInPDFs.Utilities;
+using Lucene.Net.QueryParsers.Classic;
 
 namespace PDFSearch;
 
@@ -13,48 +14,46 @@ public partial class SearchInPDFs : Form
 
     private readonly string _launchDirectory;
     private readonly AcrobatWindowManager acrobatWindowManager;
+    private readonly LuceneSearcher _luceneSearcher = new();
 
-    // make object of lucene searcher
-    private readonly LuceneSearcher LuceneSearcher = new();
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool EnumWindows(EnumWindowsProc enumProc, IntPtr lParam);
 
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    public static extern bool EnumWindows(EnumWindowsProc enumProc, IntPtr lParam);
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
-    [DllImport("user32.dll")]
-    public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
-    [DllImport("user32.dll")]
-    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool IsWindowVisible(IntPtr hWnd);
+
+    private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
     private const int SW_SHOWMAXIMIZED = 3;
+    private const int SW_SHOWNORMAL = 1;
+    private const int SW_RESTORE = 9;
     private const uint SWP_NOZORDER = 0x0004;
     private const uint SWP_SHOWWINDOW = 0x0040;
+    private const uint SWP_FRAMECHANGED = 0x0020;
 
     // Static reference to keep track of the instance
     private static SearchInPDFs instance;
 
     public SearchInPDFs(string launchDirectory)
     {
-
         _launchDirectory = launchDirectory;
-
         InitializeComponent();
         InitializeDataGridView();
-
-        // Enable KeyPreview for the form
         this.KeyPreview = true;
-
-        // Subscribe to the KeyPress event for the form
         this.KeyPress += BtnSearchText_KeyPress;
-
         acrobatWindowManager = new AcrobatWindowManager(_launchDirectory);
-
-        // Add form load event handler
         this.Load += SearchInPDFs_Load;
-        //this.Load += async (s, e) => await ProcessIndexingInBackground();
         TvSearchRange.AfterCheck += TvSearchRange_AfterCheck;
-
         instance = this;
+
     }
 
     public static SearchInPDFs Instance => instance;
@@ -91,9 +90,9 @@ public partial class SearchInPDFs : Form
 
     private void SearchInPDFs_Load(object sender, EventArgs e)
     {
-        txtSearchBox.Focus();
-        List<string> folderStructure = FolderManager.LoadFolderStructure(_launchDirectory); 
-        if (folderStructure.Count == 0)
+       txtSearchBox.Focus();
+        var folderStructure = FolderManager.LoadFolderStructure(_launchDirectory);
+        if (folderStructure is { Count: 0})
         {
             FolderManager.SaveFolderStructure(_launchDirectory);
             folderStructure = FolderManager.LoadFolderStructure(_launchDirectory);
@@ -102,22 +101,17 @@ public partial class SearchInPDFs : Form
         AddDirectoriesToTreeView(_launchDirectory, folderStructure);
         if (TvSearchRange.Nodes.Count > 0)
         {
-            TvSearchRange.Nodes[0].Expand();  // Expands only the first (root) node
+            TvSearchRange.Nodes[0].Expand();
         }
 
-
-        // some import calling
         BindFromToCombos();
         ShowHideResultGroupBox();
 
-
-
-        //treeVwResult.DrawMode = TreeViewDrawMode.OwnerDrawText;
-        Thread.Sleep(1000); // Wait for Acrobat to initialize
+        acrobatWindowManager.FindOrLaunchAcrobatWindow();
         ArrangeWindows();
     }
 
-    private void AddDirectoriesToTreeView(string launchDirectory, List<string> folderStructure)
+    private void AddDirectoriesToTreeView(string launchDirectory, List<string>? folderStructure)
     {
         if (folderStructure == null || folderStructure.Count == 0)
         {
@@ -125,56 +119,52 @@ public partial class SearchInPDFs : Form
         }
 
         // Create the root node based on the E-Library starting point
-        string rootFolderName = new DirectoryInfo(launchDirectory).Name;
-        TreeNode rootNode = new TreeNode(rootFolderName)
+        var rootFolderName = new DirectoryInfo(launchDirectory).Name;
+        var rootNode = new TreeNode(rootFolderName)
         {
             Tag = launchDirectory
         };
         TvSearchRange.Nodes.Add(rootNode);
 
         // Create a dictionary to store nodes by their full paths
-        Dictionary<string, TreeNode> nodes = new Dictionary<string, TreeNode>
+        var nodes = new Dictionary<string, TreeNode>
         {
             { launchDirectory, rootNode }
         };
 
-        foreach (string path in folderStructure)
+        foreach (var path in folderStructure)
         {
             // Only add paths that are under the _launchDirectory
-            if (path.StartsWith(launchDirectory, StringComparison.OrdinalIgnoreCase))
+            if (!path.StartsWith(launchDirectory, StringComparison.OrdinalIgnoreCase)) continue;
+            var relativePath = path[launchDirectory.Length..].TrimStart(Path.DirectorySeparatorChar);
+            var parts = relativePath.Split(Path.DirectorySeparatorChar);
+            var currentPath = launchDirectory;
+            var parentNode = rootNode;
+
+            foreach (var part in parts)
             {
-                string relativePath = path.Substring(launchDirectory.Length).TrimStart(Path.DirectorySeparatorChar);
-                string[] parts = relativePath.Split(Path.DirectorySeparatorChar);
-                string currentPath = launchDirectory;
-                TreeNode parentNode = rootNode;
+                currentPath = Path.Combine(currentPath, part);
 
-                foreach (string part in parts)
+                if (!nodes.TryGetValue(currentPath, out var value))
                 {
-                    currentPath = Path.Combine(currentPath, part);
-
-                    if (!nodes.ContainsKey(currentPath))
+                    var newNode = new TreeNode(part)
                     {
-                        TreeNode newNode = new TreeNode(part)
-                        {
-                            Tag = currentPath
-                        };
+                        Tag = currentPath
+                    };
 
-                        if (parentNode != null)
-                        {
-                            parentNode.Nodes.Add(newNode);
-                        }
+                    parentNode.Nodes.Add(newNode);
 
-                        nodes[currentPath] = newNode;
-                    }
-
-                    parentNode = nodes[currentPath];
+                    value = newNode;
+                    nodes[currentPath] = value;
                 }
+
+                parentNode = value;
             }
         }
     }
 
 
-    private void CheckAllChildNodes(TreeNode parentNode, bool isChecked)
+    private static void CheckAllChildNodes(TreeNode parentNode, bool isChecked)
     {
         foreach (TreeNode childNode in parentNode.Nodes)
         {
@@ -188,7 +178,7 @@ public partial class SearchInPDFs : Form
 
     private List<string> GetSelectedDirectories(TreeNodeCollection nodes)
     {
-        List<string> selectedDirectories = new List<string>();
+        var selectedDirectories = new List<string>();
 
         foreach (TreeNode node in nodes)
         {
@@ -210,16 +200,10 @@ public partial class SearchInPDFs : Form
         return selectedDirectories.Distinct().ToList(); // Ensure there are no duplicates
     }
 
-    private bool AreAllChildNodesChecked(TreeNode parentNode)
+    private static bool AreAllChildNodesChecked(TreeNode parentNode)
     {
-        foreach (TreeNode childNode in parentNode.Nodes)
-        {
-            if (!childNode.Checked || !AreAllChildNodesChecked(childNode))
-            {
-                return false;
-            }
-        }
-        return true;
+        return parentNode.Nodes.Cast<TreeNode>()
+            .All(childNode => childNode.Checked && AreAllChildNodesChecked(childNode));
     }
 
 
@@ -241,6 +225,7 @@ public partial class SearchInPDFs : Form
     }
 
     #region This is not in use for range based search
+
     //private void BtnSearchText_Click(object sender, EventArgs e)
     //{
     //    string? filePath = _pdfPathBackgroundService.FilePath;
@@ -341,53 +326,49 @@ public partial class SearchInPDFs : Form
     //        MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
     //    }
     //}
+
     #endregion
 
     private void BtnSearchText_Click(object sender, EventArgs e)
     {
-        bool MatchWord = false;
-        bool MatchCase = false;
+        var matchWord = chkWholeWord.Checked;
+        var matchCase = chkCaseSensitive.Checked;
         string? filePath = null;
-
-        if (chkCaseSensitive.Checked)
-        {
-            MatchCase = true;
-        }
-        if (chkWholeWord.Checked)
-        {
-            MatchWord = true;
-        }
 
         try
         {
-            // Clear previous results in the DataGridView
+            // Clear previous results
             dataGridViewResults.Rows.Clear();
 
-            string searchTerm = txtSearchBox.Text.Trim();
+            var searchTerm = txtSearchBox.Text.Trim();
             if (string.IsNullOrEmpty(searchTerm))
             {
                 MessageBox.Show("Please enter a search term.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
-            // Get selected directories from the TreeView
-            List<string> selectedDirectories = GetSelectedDirectories(TvSearchRange.Nodes);
-
-            // Check if at least one node or child node is selected
-            if (selectedDirectories.Count == 0)
+            // Get selected directories
+            var selectedDirectories = GetSelectedDirectories(TvSearchRange.Nodes);
+            if (!selectedDirectories.Any())
             {
-                MessageBox.Show("Please select at least one node or child node in the Search Range.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Please select at least one node or child node in the Search Range.", "Warning",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
-            // Perform the search in the _launchDirectory
-            var results = LuceneSearcher.SearchInDirectory(searchTerm, _launchDirectory, MatchWord, MatchCase, filePath);
+            // Perform search across all subfolder indexes
+            UpdateStatus("Searching...");
+            var results =
+                _luceneSearcher.SearchInDirectory(searchTerm, _launchDirectory, matchWord, matchCase, filePath);
 
-            // Filter the results based on the selected directories
-            var filteredResults = results.Where(r => selectedDirectories.Any(d => r.FilePath.StartsWith(d, StringComparison.OrdinalIgnoreCase))).ToList();
+            // Filter by selected directories
+            var filteredResults = results
+                .Where(r => selectedDirectories.Any(d => r.FilePath.StartsWith(d, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
 
-            if (filteredResults.Count <= 0)
+            if (filteredResults.Count == 0)
             {
+                UpdateStatus("Search completed: No results found.");
                 MessageBox.Show("No results found.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
@@ -395,45 +376,44 @@ public partial class SearchInPDFs : Form
             ShowHideResultGroupBox();
             foreach (var result in filteredResults)
             {
-                // Get the full file path and relative path
-                string fullPath = result.FilePath;
-                string relativePath = result.RelativePath;
+                var fullPath = result.FilePath;
+                var relativePath = result.RelativePath;
+                var splitFullPath = fullPath.Split(Path.DirectorySeparatorChar);
+                var splitRelativePath = relativePath.Split('\\');
 
-                // Split the full path and relative path into segments
-                string[] splitFullPath = fullPath.Split(Path.DirectorySeparatorChar);
-                string[] splitRelativePath = relativePath.Split(@"\");
+                var vesselIndexInFullPath = Array.IndexOf(splitFullPath, splitRelativePath[0]);
+                var fleet = vesselIndexInFullPath >= 0 ? splitFullPath[vesselIndexInFullPath - 1] : "";
+                var vessel = splitRelativePath.Length > 0 ? splitRelativePath[0] : "";
+                var part = splitRelativePath.Length > 1 ? splitRelativePath[1] : "";
+                var manual = Path.GetFileNameWithoutExtension(relativePath);
+                var pageNoWithContent = result.PageNumber > 0
+                    ? $"Page {result.PageNumber}: {result.Snippet}"
+                    : result.Snippet;
 
-                // Find the start index of the relative path in the full path
-                // The fleet name is the last segment of the full path before the vessel starts
-                int vesselIndexInFullPath = Array.IndexOf(splitFullPath, splitRelativePath[0]);
-
-                // Extract fleet as the last segment before the vessel starts in the relative path
-                string fleet = vesselIndexInFullPath >= 0
-                    ? splitFullPath[vesselIndexInFullPath - 1]
-                    : string.Empty;
-
-                // Extract vessel, part, and manual from the relative path
-                string vessel = splitRelativePath.Length > 0 ? splitRelativePath[0] : string.Empty; // First part of the relative path
-                string part = splitRelativePath.Length > 1 ? splitRelativePath[1] : string.Empty;   // Second part of the relative path
-                string manual = Path.GetFileNameWithoutExtension(relativePath); // The file name without extension
-
-                // Format the page number and snippet
-                string pageNoWithContent = result.PageNumber > 0 ? $"Page {result.PageNumber}: {result.Snippet}" : result.Snippet;
-
-                // Add the data to the DataGridView
-                dataGridViewResults.Rows.Add(fleet, string.Empty, vessel, part, manual, pageNoWithContent, fullPath, result.PageNumber);
+                dataGridViewResults.Rows.Add(fleet, "", vessel, part, manual, pageNoWithContent, fullPath,
+                    result.PageNumber);
             }
 
-            // Auto resize the columns to fit the content
             dataGridViewResults.AutoResizeColumns();
-
-
+            UpdateStatus($"Search completed: {filteredResults.Count} results found.");
+        }
+        catch (DirectoryNotFoundException ex)
+        {
+            UpdateStatus("Search failed: Index not found.");
+            MessageBox.Show($"Index not found: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        catch (ParseException ex)
+        {
+            UpdateStatus("Search failed: Invalid search term.");
+            MessageBox.Show($"Invalid search term: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            UpdateStatus("Search failed: An error occurred.");
+            MessageBox.Show($"Search error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
+
     private void BtnSearchText_KeyPress(object sender, KeyPressEventArgs e)
     {
         if (e.KeyChar != (char)Keys.Enter) return;
@@ -443,12 +423,11 @@ public partial class SearchInPDFs : Form
 
 
 
-
     private void lstVwResult_DrawItem(object sender, DrawListViewItemEventArgs e)
     {
         // Set the default font and brush
-        Font regularFont = e.Item.Font;
-        Font boldFont = new Font(e.Item.Font, FontStyle.Bold);
+        var regularFont = e.Item.Font;
+        var boldFont = new Font(e.Item.Font, FontStyle.Bold);
 
         // Set the background color (light gray for non-selected items)
         if (e.Item.Selected)
@@ -461,24 +440,24 @@ public partial class SearchInPDFs : Form
         }
 
         // Get the item text
-        string text = e.Item.Text;
+        var text = e.Item.Text;
 
         // Variables for drawing
         float x = e.Bounds.Left;
         float y = e.Bounds.Top;
 
         // Split text by <b> and </b> tags
-        string[] parts = text.Split(["<b>", "</b>"], StringSplitOptions.None);
-        bool isBold = false;
+        var parts = text.Split(["<b>", "</b>"], StringSplitOptions.None);
+        var isBold = false;
 
         // Draw each part
-        foreach (string part in parts)
+        foreach (var part in parts)
         {
             // Choose font based on whether the part is bold
-            Font currentFont = isBold ? boldFont : regularFont;
+            var currentFont = isBold ? boldFont : regularFont;
 
             // Measure the size of the text to calculate the next drawing position
-            SizeF textSize = e.Graphics.MeasureString(part, currentFont);
+            var textSize = e.Graphics.MeasureString(part, currentFont);
 
             // Draw the text with the correct font and color (Black or any other color)
             e.Graphics.DrawString(part, currentFont, Brushes.Black, x, y);
@@ -504,11 +483,6 @@ public partial class SearchInPDFs : Form
         {
             // Ensure a node is selected
             var selectedNode = e.Node;
-            if (selectedNode == null)
-            {
-                MessageBox.Show(@"Please select a valid node.", @"No Selection", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
 
             // Check if the node represents a search result or a directory
             if (selectedNode.Tag is SearchResult selectedResult)
@@ -537,33 +511,33 @@ public partial class SearchInPDFs : Form
         if (e.Bounds.IsEmpty) return;
 
         // Set the default font and brush
-        Font regularFont = e.Node.TreeView.Font;
+        var regularFont = e.Node.TreeView.Font;
         Font boldFont = new(e.Node.TreeView.Font, FontStyle.Bold);
 
         // Check if the current node is selected
-        bool isSelected = e.Node == e.Node.TreeView.SelectedNode;
+        var isSelected = e.Node == e.Node.TreeView.SelectedNode;
 
         // Set the background color based on selection
-        Brush backgroundBrush = isSelected ? Brushes.LightBlue : Brushes.White;
+        var backgroundBrush = isSelected ? Brushes.LightBlue : Brushes.White;
         e.Graphics.FillRectangle(backgroundBrush, e.Bounds);
 
         // Draw the node text
-        string text = e.Node.Text;
+        var text = e.Node.Text;
 
         // Variables for drawing
         float x = e.Bounds.Left + 5; // Add a small margin for text
         float y = e.Bounds.Top + (e.Bounds.Height - e.Node.TreeView.Font.Height) / 2; // Vertically center text
 
         // Split text by <b> and </b> tags
-        string[] parts = text.Split(new[] { "<b>", "</b>" }, StringSplitOptions.None);
-        bool isBold = false;
+        var parts = text.Split(new[] { "<b>", "</b>" }, StringSplitOptions.None);
+        var isBold = false;
 
-        foreach (string part in parts)
+        foreach (var part in parts)
         {
-            Font currentFont = isBold ? boldFont : regularFont;
+            var currentFont = isBold ? boldFont : regularFont;
 
             // Measure text size
-            SizeF textSize = e.Graphics.MeasureString(part, currentFont);
+            var textSize = e.Graphics.MeasureString(part, currentFont);
 
             // Draw the text
             e.Graphics.DrawString(part, currentFont, Brushes.Black, x, y);
@@ -613,77 +587,111 @@ public partial class SearchInPDFs : Form
     {
         PopupForm popupForm = new(_launchDirectory);
         popupForm.Close();
-        acrobatWindowManager.EnsureAcrobatClosed();
+        AcrobatWindowManager.EnsureAcrobatClosed();
     }
 
-    public void ArrangeWindows()
+            private void ArrangeWindows()
     {
         try
         {
-            // Find the Acrobat window
-            IntPtr acrobatHandle = IntPtr.Zero;
-            EnumWindows((hWnd, lParam) =>
+            var acrobatHandle = acrobatWindowManager.AcrobatHandle;
+
+            if (acrobatHandle == IntPtr.Zero)
             {
-                StringBuilder windowText = new StringBuilder(256);
-                GetWindowText(hWnd, windowText, windowText.Capacity);
-
-                if (windowText.ToString().Contains("Adobe Acrobat") || windowText.ToString().Contains("Acrobat"))
-                {
-                    acrobatHandle = hWnd;
-                    return false; // Stop further enumeration
-                }
-
-                return true;
-            }, IntPtr.Zero);
+                Console.WriteLine("[INFO] AcrobatHandle is zero, calling FindOrLaunchAcrobatWindow");
+                acrobatWindowManager.FindOrLaunchAcrobatWindow();
+                acrobatHandle = acrobatWindowManager.AcrobatHandle;
+            }
 
             if (acrobatHandle != IntPtr.Zero)
             {
+                // Log Acrobat window details
+                StringBuilder windowText = new(256);
+                int length = GetWindowText(acrobatHandle, windowText, windowText.Capacity);
+                string title = length > 0 ? windowText.ToString() : "(no title)";
+                bool isVisible = IsWindowVisible(acrobatHandle);
+                Console.WriteLine($"[INFO] Arranging Acrobat window: {title}, hWnd: {acrobatHandle}, Visible: {isVisible}");
+
+                if (Screen.PrimaryScreen == null)
+                {
+                    UpdateStatus("No primary screen detected.");
+                    throw new InvalidOperationException("No primary screen detected.");
+                }
+
                 // Get screen dimensions
-                int screenWidth = Screen.PrimaryScreen.WorkingArea.Width;
-                int screenHeight = Screen.PrimaryScreen.WorkingArea.Height;
+                var screenWidth = Screen.PrimaryScreen.WorkingArea.Width;
+                var screenHeight = Screen.PrimaryScreen.WorkingArea.Height;
 
-                // Calculate window sizes (30/70 split)
-                int yourAppWidth = (int)(screenWidth * 0.25);
-                int acrobatWidth = screenWidth - yourAppWidth;  // Use remaining space
+                // Calculate window sizes (25/75 split)
+                var appWidth = screenWidth / 4; // 25%
+                var acrobatWidth = screenWidth - appWidth; // 75%
+                var acrobatX = appWidth; // Start at right of app
 
-                const uint SWP_NOZORDER = 0x0004;
-                const uint SWP_SHOWWINDOW = 0x0040;
-                const uint flags = SWP_SHOWWINDOW | SWP_NOZORDER;
+                Console.WriteLine($"[DEBUG] Screen: {screenWidth}x{screenHeight}, App: {appWidth}x{screenHeight}, Acrobat: {acrobatWidth}x{screenHeight} at X={acrobatX}");
 
-                // Position your app first (left side)
-                AcrobatWindowManager.SetWindowPos(this.Handle, IntPtr.Zero, 0, 0, yourAppWidth, screenHeight, flags);
+                const uint flags = SWP_NOZORDER | SWP_SHOWWINDOW | SWP_FRAMECHANGED;
 
-                // Position Acrobat (right side)
-                AcrobatWindowManager.SetWindowPos(acrobatHandle, IntPtr.Zero, yourAppWidth, 0, acrobatWidth, screenHeight, flags);
+                // Position SearchInPDFs (left, 25%)
+                bool appSuccess = AcrobatWindowManager.SetWindowPos(this.Handle, IntPtr.Zero, 0, 0, appWidth, screenHeight, flags);
+                if (!appSuccess)
+                {
+                    int error = Marshal.GetLastWin32Error();
+                    Console.WriteLine($"[WARNING] SetWindowPos failed for SearchInPDFs: Error {error}");
+                }
+
+                // Try positioning Acrobat (right, 75%) up to 3 times
+                bool acrobatSuccess = false;
+                for (int attempt = 1; attempt <= 3 && !acrobatSuccess; attempt++)
+                {
+                    // Ensure Acrobat is restored
+                    ShowWindow(acrobatHandle, SW_RESTORE);
+                    Thread.Sleep(500); // Wait for window state
+
+                    // Position Acrobat
+                    acrobatSuccess = AcrobatWindowManager.SetWindowPos(acrobatHandle, IntPtr.Zero, acrobatX, 0, acrobatWidth, screenHeight, flags);
+                    if (!acrobatSuccess)
+                    {
+                        int error = Marshal.GetLastWin32Error();
+                        Console.WriteLine($"[WARNING] SetWindowPos failed for Acrobat (attempt {attempt}): Error {error}");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[INFO] SetWindowPos succeeded for Acrobat on attempt {attempt}");
+                    }
+                    Thread.Sleep(500); // Wait before retry
+                }
+
+                // Maximize Acrobat within bounds
+                ShowWindow(acrobatHandle, SW_SHOWNORMAL);
+
+                UpdateStatus("Windows arranged successfully.");
+                Console.WriteLine($"[INFO] Arranged windows: SearchInPDFs ({appWidth}x{screenHeight}), Acrobat ({acrobatWidth}x{screenHeight})");
             }
             else
             {
-                MessageBox.Show("Adobe Acrobat window not found.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                UpdateStatus("Adobe Acrobat window not found.");
+                Console.WriteLine("[ERROR] Adobe Acrobat window not found.");
+                MessageBox.Show("Adobe Acrobat window not found. Please ensure Adobe Acrobat is installed and the configured PDF opener is correct.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
         catch (Exception ex)
         {
+            UpdateStatus("Error arranging windows.");
+            Console.WriteLine($"[ERROR] ArrangeWindows failed: {ex.Message}");
             MessageBox.Show($"Error arranging windows: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
-
-
     private void BindFromToCombos()
     {
 
-        List<string> directories = FolderManager.LoadFolderStructure(_launchDirectory);
-        if (directories.Count != 0)
+        var directories = FolderManager.LoadFolderStructure(_launchDirectory);
+        if (directories.Count == 0) return;
+        foreach (var directory in directories)
         {
-            foreach (string directory in directories)
+            if (!string.IsNullOrEmpty(directory))
             {
-                if (!string.IsNullOrEmpty(directory))
-                {
-                    string NewPath = Helpers.Helpers.GetShortenedDirectoryPath(directory);
-
-
-                }
-
+                var NewPath = Helpers.Helpers.GetShortenedDirectoryPath(directory);
             }
         }
     }
@@ -696,7 +704,7 @@ public partial class SearchInPDFs : Form
     private void TvSearchRange_AfterCheck(object sender, TreeViewEventArgs e)
     {
         // Check/uncheck all child nodes
-        if (e.Node.Nodes.Count > 0)
+        if (e.Node is { Nodes.Count: > 0 })
         {
             CheckAllChildNodes(e.Node, e.Node.Checked);
         }
@@ -710,40 +718,50 @@ public partial class SearchInPDFs : Form
         e.Handled = true;
         e.PaintBackground(e.CellBounds, e.State.HasFlag(DataGridViewElementStates.Selected));
 
-        Font regularFont = e.CellStyle.Font;
-        Font boldFont = new Font(e.CellStyle.Font, FontStyle.Bold);
-
-        // Get the text to draw
-        string text = e.FormattedValue?.ToString() ?? string.Empty;
-
-        // Split text by <b> and </b> tags
-        string[] parts = text.Split(new[] { "<b>", "</b>" }, StringSplitOptions.None);
-        bool isBold = false;
-
-        // Variables for drawing
-        float x = e.CellBounds.Left + 5;
-        float y = e.CellBounds.Top + (e.CellBounds.Height - e.CellStyle.Font.Height) / 2;
-
-        foreach (string part in parts)
+        var regularFont = e.CellStyle?.Font;
+        if (e.CellStyle?.Font != null)
         {
-            Font currentFont = isBold ? boldFont : regularFont;
+            var boldFont = new Font(e.CellStyle.Font, FontStyle.Bold);
 
-            // Measure text size
-            SizeF textSize = e.Graphics.MeasureString(part, currentFont);
+            // Get the text to draw
+            var text = e.FormattedValue?.ToString() ?? string.Empty;
 
-            // Draw the text
-            e.Graphics.DrawString(part, currentFont, Brushes.Black, x, y);
+            // Split text by <b> and </b> tags
+            var parts = text.Split(new[] { "<b>", "</b>" }, StringSplitOptions.None);
+            var isBold = false;
 
-            // Advance x position
-            x += textSize.Width;
+            // Variables for drawing
+            float x = e.CellBounds.Left + 5;
+            float y = e.CellBounds.Top + (e.CellBounds.Height - e.CellStyle.Font.Height) / 2;
 
-            // Toggle bold state
-            isBold = !isBold;
+            foreach (var part in parts)
+            {
+                var currentFont = isBold ? boldFont : regularFont;
+
+                // Measure text size
+                if (e.Graphics != null)
+                {
+                    if (currentFont != null)
+                    {
+                        var textSize = e.Graphics.MeasureString(part, currentFont);
+
+                        // Draw the text
+                        e.Graphics.DrawString(part, currentFont, Brushes.Black, x, y);
+
+                        // Advance x position
+                        x += textSize.Width;
+                    }
+                }
+
+                // Toggle bold state
+                isBold = !isBold;
+            }
         }
 
         // Draw the focus rectangle if selected
         if (e.State.HasFlag(DataGridViewElementStates.Selected))
-            e.Graphics.DrawRectangle(Pens.Black, e.CellBounds.X, e.CellBounds.Y, e.CellBounds.Width - 1, e.CellBounds.Height - 1);
+            e.Graphics?.DrawRectangle(Pens.Black, e.CellBounds.X, e.CellBounds.Y, e.CellBounds.Width - 1,
+                e.CellBounds.Height - 1);
     }
 
     private void dataGridViewResults_CellMouseDoubleClick(object sender, DataGridViewCellMouseEventArgs e)
@@ -756,24 +774,26 @@ public partial class SearchInPDFs : Form
                 // Get the full path from the hidden FullPath column
                 var selectedRow = dataGridViewResults.Rows[e.RowIndex];
                 var fullPath = selectedRow.Cells["FullPath"].Value?.ToString();
-                var PageNo = selectedRow.Cells["PageNo"].Value?.ToString();
+                var pageNo = selectedRow.Cells["PageNo"].Value?.ToString();
 
 
                 if (!string.IsNullOrEmpty(fullPath))
                 {
-                    int pageNumber = Convert.ToInt32(PageNo);
+                    var pageNumber = Convert.ToInt32(pageNo);
 
                     // Open the PDF at the specific page
                     PdfOpener.OpenPdfAtPage(fullPath, pageNumber, txtSearchBox.Text, _launchDirectory);
                 }
                 else
                 {
-                    MessageBox.Show("Invalid file path selected.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBox.Show("Invalid file path selected.", "Error", MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
                 }
             }
             else
             {
-                MessageBox.Show("Please select a valid row.", "No Selection", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Please select a valid row.", "No Selection", MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
             }
         }
         catch (Exception ex)
@@ -784,15 +804,11 @@ public partial class SearchInPDFs : Form
 
     private void SearchInPDFs_Resize(object sender, EventArgs e)
     {
-        if (this.WindowState == FormWindowState.Minimized)
-        {
-            // Restore the existing PopupForm if it's minimized
-            if (PopupForm.Instance != null && PopupForm.Instance.WindowState == FormWindowState.Minimized)
-            {
-                PopupForm.Instance.WindowState = FormWindowState.Normal;
-                PopupForm.Instance.BringToFront();
-                acrobatWindowManager.FindOrLaunchAcrobatWindow();
-            }
-        }
+        if (this.WindowState != FormWindowState.Minimized) return;
+        // Restore the existing PopupForm if it's minimized
+        if (PopupForm.Instance.WindowState != FormWindowState.Minimized) return;
+        PopupForm.Instance.WindowState = FormWindowState.Normal;
+        PopupForm.Instance.BringToFront();
+        acrobatWindowManager.FindOrLaunchAcrobatWindow();
     }
-}
+} 

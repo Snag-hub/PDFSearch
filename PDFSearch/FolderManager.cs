@@ -53,7 +53,7 @@ public static class FolderManager
     }
 
     // Load folder structure from JSON file
-    public static List<string> LoadFolderStructure(string rootPath)
+    public static List<string>? LoadFolderStructure(string rootPath)
     {
         // Get the path to the JSON file inside the hashed folder
         string jsonFilePath = GetJsonFilePath(rootPath);
