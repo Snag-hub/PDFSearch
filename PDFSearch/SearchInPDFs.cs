@@ -1,13 +1,12 @@
-﻿using Microsoft.Extensions.Logging;
-using PDFSearch.Utilities;
-using PDFSearch.Acrobat;
-using System.Configuration;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Text;
+using FindInPDFs.Acrobat;
 using FindInPDFs.Utilities;
 using Lucene.Net.QueryParsers.Classic;
+using PDFSearch;
+using PDFSearch.Utilities;
 
-namespace PDFSearch;
+namespace FindInPDFs;
 
 public partial class SearchInPDFs : Form
 {
@@ -32,6 +31,7 @@ public partial class SearchInPDFs : Form
     private static partial bool IsWindowVisible(IntPtr hWnd);
 
     private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
     private const int SW_SHOWMAXIMIZED = 3;
     private const int SW_SHOWNORMAL = 1;
     private const int SW_RESTORE = 9;
@@ -90,9 +90,9 @@ public partial class SearchInPDFs : Form
 
     private void SearchInPDFs_Load(object sender, EventArgs e)
     {
-       txtSearchBox.Focus();
+        txtSearchBox.Focus();
         var folderStructure = FolderManager.LoadFolderStructure(_launchDirectory);
-        if (folderStructure is { Count: 0})
+        if (folderStructure is { Count: 0 })
         {
             FolderManager.SaveFolderStructure(_launchDirectory);
             folderStructure = FolderManager.LoadFolderStructure(_launchDirectory);
@@ -587,100 +587,64 @@ public partial class SearchInPDFs : Form
     {
         PopupForm popupForm = new(_launchDirectory);
         popupForm.Close();
-        AcrobatWindowManager.EnsureAcrobatClosed();
+        // AcrobatWindowManager.EnsureAcrobatClosed();
     }
 
-            private void ArrangeWindows()
+    private void ArrangeWindows()
     {
         try
         {
-            var acrobatHandle = acrobatWindowManager.AcrobatHandle;
-
-            if (acrobatHandle == IntPtr.Zero)
+            // Find the Acrobat window
+            IntPtr acrobatHandle = IntPtr.Zero;
+            EnumWindows((hWnd, lParam) =>
             {
-                Console.WriteLine("[INFO] AcrobatHandle is zero, calling FindOrLaunchAcrobatWindow");
-                acrobatWindowManager.FindOrLaunchAcrobatWindow();
-                acrobatHandle = acrobatWindowManager.AcrobatHandle;
-            }
+                StringBuilder windowText = new StringBuilder(256);
+                GetWindowText(hWnd, windowText, windowText.Capacity);
+
+                if (windowText.ToString().Contains("Adobe Acrobat") || windowText.ToString().Contains("Acrobat"))
+                {
+                    acrobatHandle = hWnd;
+                    return false; // Stop further enumeration
+                }
+
+                return true;
+            }, IntPtr.Zero);
 
             if (acrobatHandle != IntPtr.Zero)
             {
-                // Log Acrobat window details
-                StringBuilder windowText = new(256);
-                int length = GetWindowText(acrobatHandle, windowText, windowText.Capacity);
-                string title = length > 0 ? windowText.ToString() : "(no title)";
-                bool isVisible = IsWindowVisible(acrobatHandle);
-                Console.WriteLine($"[INFO] Arranging Acrobat window: {title}, hWnd: {acrobatHandle}, Visible: {isVisible}");
-
-                if (Screen.PrimaryScreen == null)
-                {
-                    UpdateStatus("No primary screen detected.");
-                    throw new InvalidOperationException("No primary screen detected.");
-                }
-
                 // Get screen dimensions
-                var screenWidth = Screen.PrimaryScreen.WorkingArea.Width;
-                var screenHeight = Screen.PrimaryScreen.WorkingArea.Height;
+                int screenWidth = Screen.PrimaryScreen.WorkingArea.Width;
+                int screenHeight = Screen.PrimaryScreen.WorkingArea.Height;
 
-                // Calculate window sizes (25/75 split)
-                var appWidth = screenWidth / 4; // 25%
-                var acrobatWidth = screenWidth - appWidth; // 75%
-                var acrobatX = appWidth; // Start at right of app
+                // Calculate window sizes (30/70 split)
+                int yourAppWidth = (int)(screenWidth * 0.25);
+                int acrobatWidth = screenWidth - yourAppWidth; // Use remaining space
 
-                Console.WriteLine($"[DEBUG] Screen: {screenWidth}x{screenHeight}, App: {appWidth}x{screenHeight}, Acrobat: {acrobatWidth}x{screenHeight} at X={acrobatX}");
+                const uint SWP_NOZORDER = 0x0004;
+                const uint SWP_SHOWWINDOW = 0x0040;
+                const uint flags = SWP_SHOWWINDOW | SWP_NOZORDER;
 
-                const uint flags = SWP_NOZORDER | SWP_SHOWWINDOW | SWP_FRAMECHANGED;
+                // Position your app first (left side)
+                AcrobatWindowManager.SetWindowPos(this.Handle, IntPtr.Zero, 0, 0, yourAppWidth, screenHeight, flags);
 
-                // Position SearchInPDFs (left, 25%)
-                bool appSuccess = AcrobatWindowManager.SetWindowPos(this.Handle, IntPtr.Zero, 0, 0, appWidth, screenHeight, flags);
-                if (!appSuccess)
-                {
-                    int error = Marshal.GetLastWin32Error();
-                    Console.WriteLine($"[WARNING] SetWindowPos failed for SearchInPDFs: Error {error}");
-                }
-
-                // Try positioning Acrobat (right, 75%) up to 3 times
-                bool acrobatSuccess = false;
-                for (int attempt = 1; attempt <= 3 && !acrobatSuccess; attempt++)
-                {
-                    // Ensure Acrobat is restored
-                    ShowWindow(acrobatHandle, SW_RESTORE);
-                    Thread.Sleep(500); // Wait for window state
-
-                    // Position Acrobat
-                    acrobatSuccess = AcrobatWindowManager.SetWindowPos(acrobatHandle, IntPtr.Zero, acrobatX, 0, acrobatWidth, screenHeight, flags);
-                    if (!acrobatSuccess)
-                    {
-                        int error = Marshal.GetLastWin32Error();
-                        Console.WriteLine($"[WARNING] SetWindowPos failed for Acrobat (attempt {attempt}): Error {error}");
-                    }
-                    else
-                    {
-                        Console.WriteLine($"[INFO] SetWindowPos succeeded for Acrobat on attempt {attempt}");
-                    }
-                    Thread.Sleep(500); // Wait before retry
-                }
-
-                // Maximize Acrobat within bounds
-                ShowWindow(acrobatHandle, SW_SHOWNORMAL);
-
-                UpdateStatus("Windows arranged successfully.");
-                Console.WriteLine($"[INFO] Arranged windows: SearchInPDFs ({appWidth}x{screenHeight}), Acrobat ({acrobatWidth}x{screenHeight})");
+                // Position Acrobat (right side)
+                AcrobatWindowManager.SetWindowPos(acrobatHandle, IntPtr.Zero, yourAppWidth, 0, acrobatWidth,
+                    screenHeight, flags);
             }
             else
             {
-                UpdateStatus("Adobe Acrobat window not found.");
-                Console.WriteLine("[ERROR] Adobe Acrobat window not found.");
-                MessageBox.Show("Adobe Acrobat window not found. Please ensure Adobe Acrobat is installed and the configured PDF opener is correct.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("Adobe Acrobat window not found.", "Warning", MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
             }
         }
         catch (Exception ex)
         {
-            UpdateStatus("Error arranging windows.");
-            Console.WriteLine($"[ERROR] ArrangeWindows failed: {ex.Message}");
-            MessageBox.Show($"Error arranging windows: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show($"Error arranging windows: {ex.Message}", "Error", MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
         }
     }
+    
+    
 
     private void BindFromToCombos()
     {
@@ -691,7 +655,7 @@ public partial class SearchInPDFs : Form
         {
             if (!string.IsNullOrEmpty(directory))
             {
-                var NewPath = Helpers.Helpers.GetShortenedDirectoryPath(directory);
+                var NewPath = PDFSearch.Helpers.Helpers.GetShortenedDirectoryPath(directory);
             }
         }
     }

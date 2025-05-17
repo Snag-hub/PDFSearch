@@ -1,15 +1,10 @@
-﻿using Microsoft.Win32;
-using PDFSearch.Acrobat;
-using PDFSearch.Utilities;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
-using System.Windows.Forms;
-using FindInPDFs.Utilities;
+﻿using FindInPDFs.Utilities;
+using Microsoft.Win32;
+using PDFSearch;
+using FindInPDFs;
+using FindInPDFs.Acrobat;
 
-namespace PDFSearch;
+namespace FindInPDFs;
 
 public partial class PopupForm : Form
 {
@@ -94,11 +89,18 @@ public partial class PopupForm : Form
         }
     }
 
-    public async void PopupForm_Load(object sender, EventArgs e)
+    private async void PopupForm_Load(object sender, EventArgs eventArgs)
     {
-        // Show loading indicator and start indexing in background
-        await ProcessIndexingInBackground();
-        acrobatWindowManager.FindOrLaunchAcrobatWindow();
+        try
+        {
+            // Show loading indicator and start indexing in background
+            await ProcessIndexingInBackground();
+            acrobatWindowManager.FindOrLaunchAcrobatWindow();
+        }
+        catch (Exception e)
+        {
+            throw; // TODO handle exception
+        }
     }
 
     private async Task ProcessIndexingInBackground()

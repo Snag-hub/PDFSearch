@@ -1,222 +1,216 @@
-﻿using System;
-using System.Diagnostics;
-using System.IO;
+﻿using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Threading;
-using System.Windows.Forms;
+using PDFSearch;
 
-namespace PDFSearch.Acrobat;
+namespace FindInPDFs.Acrobat;
 
-internal partial class AcrobatWindowManager(string launchDirectory)
+internal class AcrobatWindowManager(string launchDirectory)
 {
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool EnumWindows(EnumWindowsProc enumProc, IntPtr lParam);
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern bool EnumWindows(EnumWindowsProc enumProc, IntPtr lParam);
 
-    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
 
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static partial bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetParent(IntPtr hWnd);
 
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static partial bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    [DllImport("user32.dll")]
+    public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
 
-    [LibraryImport("user32.dll")]
-    private static partial uint GetWindowThreadProcessId(IntPtr hWnd, out int lpdwProcessId);
+    [DllImport("user32.dll")]
+    public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
 
-    public IntPtr AcrobatHandle { get; private set; } = IntPtr.Zero;
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
+    public IntPtr acrobatHandle = IntPtr.Zero;
+
+    // EnumWindows callback
     private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
-    public const int SW_SHOWMAXIMIZED = 3;
-    public const int SW_RESTORE = 9;
-    public const uint SWP_NOZORDER = 0x0004;
-    public const uint SWP_SHOWWINDOW = 0x0040;
-    public const uint SWP_FRAMECHANGED = 0x0020;
+    // Constants for ShowWindow
+    private const int SW_SHOWMAXIMIZED = 3;
+
+    #region THis is working but not using it...
+    //public void FindOrLaunchAcrobatWindow()
+    //{
+    //    try
+    //    {
+    //        // Load configuration to get the file name
+    //        ConfigManager config = ConfigManager.LoadConfig();
+    //        if (config == null || string.IsNullOrWhiteSpace(config.StartFile))
+    //        {
+    //            MessageBox.Show("Configuration not found or StartFile is not specified.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+    //            return;
+    //        }
+
+    //        string fileName = config.StartFile;
+    //        string filePath = Path.Combine(_launchDirectory, fileName);
+
+    //        if (!File.Exists(filePath))
+    //        {
+    //            MessageBox.Show($"File not found: {filePath}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+    //            return;
+    //        }
+
+    //        // List of potential Acrobat installation paths
+    //        string[] possiblePaths =
+    //        {
+    //            @"C:\Program Files\Adobe\Acrobat DC\Acrobat\Acrobat.exe",
+    //            @"C:\Program Files (x86)\Adobe\Acrobat DC\Acrobat\Acrobat.exe",
+    //            @"C:\Program Files\Adobe\Reader DC\Reader\AcroRd32.exe",
+    //            @"C:\Program Files (x86)\Adobe\Reader DC\Reader\AcroRd32.exe"
+    //        };
+
+    //        // Find the first valid path
+    //        string acrobatPath = possiblePaths.FirstOrDefault(File.Exists);
+    //        if (acrobatPath == null)
+    //        {
+    //            MessageBox.Show("Adobe Acrobat or Reader is not installed.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+    //            return;
+    //        }
+
+    //        // Check if Acrobat process is running
+    //        var acrobatProcess = Process.GetProcessesByName(Path.GetFileNameWithoutExtension(acrobatPath)).FirstOrDefault();
+    //        if (acrobatProcess != null)
+    //        {
+    //            // Acrobat is already running, open the file in the running instance
+    //            Process.Start(acrobatPath, $"\"{filePath}\"");
+    //        }
+    //        else
+    //        {
+    //            // Acrobat is not running, start a new instance
+    //            var process = Process.Start(acrobatPath, $"\"{filePath}\"");
+    //            if (process == null)
+    //            {
+    //                MessageBox.Show("Failed to start Adobe Acrobat.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+    //                return;
+    //            }
+
+    //            // Allow some time for Acrobat to initialize
+    //            Thread.Sleep(5000);
+    //        }
+
+    //        // Find the Acrobat window and maximize it
+    //        EnumWindows((hWnd, lParam) =>
+    //        {
+    //            StringBuilder windowText = new(256);
+    //            GetWindowText(hWnd, windowText, windowText.Capacity);
+
+    //            if (windowText.ToString().Contains("Adobe Acrobat") || windowText.ToString().Contains("Acrobat"))
+    //            {
+    //                IntPtr acrobatHandle = hWnd;
+    //                ShowWindow(acrobatHandle, SW_SHOWMAXIMIZED);
+    //                return false; // Stop further enumeration
+    //            }
+
+    //            return true;
+    //        }, IntPtr.Zero);
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        MessageBox.Show($"Error finding or launching Acrobat: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+    //    }
+    //}
+    #endregion
 
     public void FindOrLaunchAcrobatWindow()
     {
-        var config = ConfigManager.LoadConfig(launchDirectory);
         try
         {
-            // Validate configuration
+            // Load configuration to get the StartFile and PdfOpener
+            var config = ConfigManager.LoadConfig(launchDirectory);
             if (config == null || string.IsNullOrWhiteSpace(config.StartFile) || string.IsNullOrWhiteSpace(config.PdfOpener))
             {
-                Console.WriteLine("[ERROR] Invalid configuration: StartFile or PdfOpener missing.");
                 MessageBox.Show("Configuration not found or StartFile/PdfOpener is not specified.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
-            var fileName = config.StartFile;
-            var filePath = Path.Combine(launchDirectory, fileName);
+            string fileName = config.StartFile;
+            string filePath = Path.Combine(launchDirectory, fileName);
 
             if (!File.Exists(filePath))
             {
-                Console.WriteLine($"[ERROR] StartFile not found: {filePath}");
                 MessageBox.Show($"File not found: {filePath}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
-            var acrobatPath = config.PdfOpener;
+            // Get the PDF opener path from the configuration
+            string acrobatPath = config.PdfOpener;
+
+            // Check if the specified PDF opener exists
             if (!File.Exists(acrobatPath))
             {
-                Console.WriteLine($"[ERROR] PdfOpener not found: {acrobatPath}");
                 MessageBox.Show($"PDF opener not found: {acrobatPath}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
-            // Log config for debugging
-            Console.WriteLine($"[DEBUG] Config: StartFile={filePath}, PdfOpener={acrobatPath}");
-
-            // Get initial Acrobat processes
-            var processName = Path.GetFileNameWithoutExtension(acrobatPath);
-            var initialProcesses = Process.GetProcessesByName(processName);
-            Console.WriteLine($"[DEBUG] Initial Acrobat processes: {initialProcesses.Length}");
-            foreach (var proc in initialProcesses)
-                Console.WriteLine($"[DEBUG] PID: {proc.Id}, MainWindowHandle: {proc.MainWindowHandle}, HasExited: {proc.HasExited}");
-
-            // Launch Acrobat
-            var process = Process.Start(new ProcessStartInfo
+            // Check if the PDF opener process is running
+            var acrobatProcess = Process.GetProcessesByName(Path.GetFileNameWithoutExtension(acrobatPath)).FirstOrDefault();
+            if (acrobatProcess != null)
             {
-                FileName = acrobatPath,
-                Arguments = $"\"{filePath}\"",
-                UseShellExecute = true
-            });
-
-            if (process == null)
-            {
-                Console.WriteLine($"[ERROR] Failed to start Acrobat process: {acrobatPath}");
-                MessageBox.Show("Failed to start PDF opener.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
+                // PDF opener is already running, open the file in the running instance
+                Process.Start(acrobatPath, $"\"{filePath}\"");
             }
-
-            var launchedProcessId = process.Id;
-            Console.WriteLine($"[INFO] Launched Acrobat process: {processName}, PID: {launchedProcessId}, HasExited: {process.HasExited}");
-
-            // Collect all Acrobat processes (including existing and new)
-            var allProcessIds = new List<int> { launchedProcessId };
-            var currentProcesses = Process.GetProcessesByName(processName);
-            foreach (var proc in currentProcesses)
+            else
             {
-                if (!allProcessIds.Contains(proc.Id))
-                    allProcessIds.Add(proc.Id);
-                Console.WriteLine($"[DEBUG] Current Acrobat process: PID: {proc.Id}, MainWindowHandle: {proc.MainWindowHandle}, HasExited: {proc.HasExited}");
-            }
-
-            // Wait for MainWindowHandle across all Acrobat processes (up to 15 seconds)
-            int waitSeconds = 15;
-            for (int i = 0; i < waitSeconds; i++)
-            {
-                foreach (var pid in allProcessIds)
+                // PDF opener is not running, start a new instance
+                var process = Process.Start(acrobatPath, $"\"{filePath}\"");
+                if (process == null)
                 {
-                    try
-                    {
-                        var proc = Process.GetProcessById(pid);
-                        if (!proc.HasExited && proc.MainWindowHandle != IntPtr.Zero)
-                        {
-                            StringBuilder windowText = new(256);
-                            var length = GetWindowText(proc.MainWindowHandle, windowText, windowText.Capacity);
-                            var title = length > 0 ? windowText.ToString() : "(no title)";
-                            Console.WriteLine($"[INFO] Found candidate window: {title}, hWnd: {proc.MainWindowHandle}, PID: {pid}");
-                            // Prioritize windows with PDF filename
-                            if (title.Contains(Path.GetFileNameWithoutExtension(fileName), StringComparison.OrdinalIgnoreCase))
-                            {
-                                AcrobatHandle = proc.MainWindowHandle;
-                                Console.WriteLine($"[INFO] Selected MainWindowHandle: {title}, hWnd: {proc.MainWindowHandle}, PID: {pid}");
-                                ShowWindow(AcrobatHandle, SW_RESTORE);
-                                return;
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"[WARNING] Error checking process PID {pid}: {ex.Message}");
-                    }
+                    MessageBox.Show("Failed to start the PDF opener.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
                 }
-                Console.WriteLine($"[INFO] Waiting for Acrobat MainWindowHandle ({i + 1}/{waitSeconds} seconds)");
-                Thread.Sleep(1000);
+
+                // Allow some time for the PDF opener to initialize
+                Thread.Sleep(5000);
             }
 
-            // Fallback to EnumWindows across all Acrobat process IDs
-            var retries = 5;
-            while (retries > 0 && AcrobatHandle == IntPtr.Zero)
+            // Find the PDF opener window and maximize it
+            EnumWindows((hWnd, lParam) =>
             {
-                Console.WriteLine($"[INFO] MainWindowHandle not found, searching windows by PIDs, retries left: {retries}");
-                EnumWindows((hWnd, lParam) =>
+                StringBuilder windowText = new(256);
+                GetWindowText(hWnd, windowText, windowText.Capacity);
+
+                if (windowText.ToString().Contains("Adobe Acrobat") || windowText.ToString().Contains("Acrobat"))
                 {
-                    GetWindowThreadProcessId(hWnd, out var processId);
-                    if (!allProcessIds.Contains(processId))
-                        return true;
-
-                    StringBuilder windowText = new(256);
-                    var length = GetWindowText(hWnd, windowText, windowText.Capacity);
-                    if (length == 0)
-                    {
-                        var error = Marshal.GetLastWin32Error();
-                        if (error != 0)
-                            Console.WriteLine($"[WARNING] GetWindowText failed for hWnd {hWnd}: Error {error}");
-                        return true;
-                    }
-
-                    var title = windowText.ToString();
-                    Console.WriteLine($"[INFO] Checking window: {title}, hWnd: {hWnd}, PID: {processId}");
-                    // Prioritize windows with PDF filename
-                    if (title.Contains(Path.GetFileNameWithoutExtension(fileName), StringComparison.OrdinalIgnoreCase))
-                    {
-                        AcrobatHandle = hWnd;
-                        ShowWindow(hWnd, SW_RESTORE);
-                        Console.WriteLine($"[INFO] Selected Acrobat window: {title}, hWnd: {hWnd}, PID: {processId}");
-                        return false;
-                    }
-                    return true;
-                }, IntPtr.Zero);
-
-                if (AcrobatHandle == IntPtr.Zero)
-                {
-                    retries--;
-                    Thread.Sleep(2000);
+                    IntPtr acrobatHandle = hWnd;
+                    ShowWindow(acrobatHandle, SW_SHOWMAXIMIZED);
+                    return false; // Stop further enumeration
                 }
-            }
 
-            // Final fallback: Take any Acrobat window
-            if (AcrobatHandle == IntPtr.Zero)
-            {
-                Console.WriteLine("[INFO] No PDF-specific window found, trying any Acrobat window");
-                EnumWindows((hWnd, lParam) =>
-                {
-                    GetWindowThreadProcessId(hWnd, out var processId);
-                    if (!allProcessIds.Contains(processId))
-                        return true;
-
-                    StringBuilder windowText = new(256);
-                    var length = GetWindowText(hWnd, windowText, windowText.Capacity);
-                    if (length == 0)
-                        return true;
-
-                    var title = windowText.ToString();
-                    Console.WriteLine($"[INFO] Checking fallback window: {title}, hWnd: {hWnd}, PID: {processId}");
-                    AcrobatHandle = hWnd;
-                    ShowWindow(hWnd, SW_RESTORE);
-                    Console.WriteLine($"[INFO] Selected fallback Acrobat window: {title}, hWnd: {hWnd}, PID: {processId}");
-                    return false;
-                }, IntPtr.Zero);
-            }
-
-            if (AcrobatHandle == IntPtr.Zero)
-            {
-                Console.WriteLine("[ERROR] Adobe Acrobat window not found after retries.");
-                MessageBox.Show("Adobe Acrobat window not found. Please ensure Adobe Acrobat is installed and the configured PDF opener is correct.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+                return true;
+            }, IntPtr.Zero);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ERROR] FindOrLaunchAcrobatWindow failed: {ex.Message}");
             MessageBox.Show($"Error finding or launching the PDF opener: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+    }
+
+    /// <summary>
+    /// Finds an Adobe Acrobat window and maximizes it.
+    /// </summary>
+    /// <returns>The handle of the Acrobat window, or IntPtr.Zero if not found.</returns>
+    public static void FindAndMaximizeAcrobatWindow()
+    {
+        EnumWindows((hWnd, lParam) =>
+        {
+            StringBuilder windowText = new(256);
+            GetWindowText(hWnd, windowText, windowText.Capacity);
+
+            if (windowText.ToString().Contains("Adobe Acrobat") || windowText.ToString().Contains("Acrobat"))
+            {
+                IntPtr acrobatHandle = hWnd;
+                ShowWindow(acrobatHandle, SW_SHOWMAXIMIZED);
+                return false; // Stop further enumeration
+            }
+
+            return true;
+        }, IntPtr.Zero);
+
     }
 
     public static void EnsureAcrobatClosed()
@@ -225,13 +219,11 @@ internal partial class AcrobatWindowManager(string launchDirectory)
         {
             try
             {
-                Console.WriteLine($"[INFO] Closing Acrobat process, PID: {process.Id}");
                 process.Kill();
                 process.WaitForExit();
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ERROR] Error closing Acrobat process: {ex.Message}");
                 MessageBox.Show($"Error closing Acrobat process: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }

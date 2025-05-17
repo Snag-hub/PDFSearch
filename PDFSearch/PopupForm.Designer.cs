@@ -1,4 +1,4 @@
-﻿namespace PDFSearch
+﻿namespace FindInPDFs
 {
     partial class PopupForm
     {

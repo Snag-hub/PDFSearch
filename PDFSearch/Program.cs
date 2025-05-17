@@ -1,3 +1,5 @@
+using FindInPDFs;
+
 namespace PDFSearch;
 
 internal static class Program
