@@ -84,23 +84,16 @@ public partial class PopupForm : Form
             this.WindowState = FormWindowState.Minimized;
 
             // Show the new search form and arrange windows after it's shown
-            SearchInPDFs searchInPDFs = new(folderPath);
-            searchInPDFs.Show();
+            SearchInPDFs searchInPdFs = new(folderPath);
+            searchInPdFs.Show();
         }
     }
 
     private async void PopupForm_Load(object sender, EventArgs eventArgs)
     {
-        try
-        {
-            // Show loading indicator and start indexing in background
-            await ProcessIndexingInBackground();
-            acrobatWindowManager.FindOrLaunchAcrobatWindow();
-        }
-        catch (Exception e)
-        {
-            throw; // TODO handle exception
-        }
+        // Show loading indicator and start indexing in background
+        await ProcessIndexingInBackground();
+        acrobatWindowManager.FindOrLaunchAcrobatWindow();
     }
 
     private async Task ProcessIndexingInBackground()
