@@ -1,11 +1,14 @@
-﻿using System.Collections.Concurrent;
+﻿using System;
+using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.IO;
+using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using Lucene.Net.Analysis.Standard;
 using Lucene.Net.Documents;
 using Lucene.Net.Index;
 using Lucene.Net.Store;
-using Microsoft.VisualBasic.Devices;
 using PDFSearch.Helpers;
 using PDFSearch.Utilities;
 using Directory = System.IO.Directory;
@@ -20,7 +23,12 @@ public static class LuceneIndexer
     private const int CommitIntervalPages = 2000; // Commit every 2000 pages for large files
     private const int MaxDegreeOfParallelism = 2; // Limit parallel tasks
 
-    public static void IndexDirectory(string folderPath)
+    /// <summary>
+    /// Indexes all PDF files in the specified directory with progress reporting.
+    /// </summary>
+    /// <param name="folderPath">The directory to index.</param>
+    /// <param name="progressCallback">Callback to report progress (current, total files).</param>
+    public static void IndexDirectory(string folderPath, Action<int, int> progressCallback = null)
     {
         if (!Directory.Exists(folderPath))
         {
@@ -36,13 +44,26 @@ public static class LuceneIndexer
 
         var metadata = LoadMetadata(folderPath);
 
+        // Count total new/updated files across all folders for progress
+        int totalFiles = foldersToIndex
+            .SelectMany(folder => Directory.GetFiles(folder, "*.pdf", SearchOption.AllDirectories))
+            .Select(f => (Path: f, Size: new FileInfo(f).Length))
+            .OrderBy(f => f.Size)
+            .Select(f => f.Path)
+            .Count(file => !metadata.TryGetValue(file, out var indexedTime) || File.GetLastWriteTimeUtc(file) > indexedTime);
+        int processedFiles = 0;
+
         foreach (var folder in foldersToIndex)
         {
             var indexPath = Path.Combine(baseIndexPath, $"index_folder_{Path.GetFileName(folder)}");
             Directory.CreateDirectory(indexPath);
 
             Console.WriteLine($"Indexing folder: {folder}");
-            IndexFolder(folder, indexPath, folderPath, metadata);
+            IndexFolder(folder, indexPath, folderPath, metadata, () =>
+            {
+                Interlocked.Increment(ref processedFiles);
+                progressCallback?.Invoke(processedFiles, totalFiles);
+            });
         }
 
         SaveMetadata(folderPath, metadata);
@@ -51,7 +72,7 @@ public static class LuceneIndexer
     }
 
     private static void IndexFolder(string folderToIndex, string indexPath, string rootFolderPath,
-        Dictionary<string, DateTime> metadata)
+        Dictionary<string, DateTime> metadata, Action onFileProcessed)
     {
         var files = Directory.GetFiles(folderToIndex, "*.pdf", SearchOption.AllDirectories)
             .Select(f => (Path: f, Size: new FileInfo(f).Length))
@@ -97,6 +118,7 @@ public static class LuceneIndexer
                     var fileSize = new FileInfo(file).Length;
                     ProcessFile(file, rootFolderPath, fileSize, writer, true);
                     metadataUpdates.Add((file, File.GetLastWriteTimeUtc(file)));
+                    onFileProcessed();
                 }
                 catch (Exception ex)
                 {
@@ -114,6 +136,7 @@ public static class LuceneIndexer
                 ProcessFile(file, rootFolderPath, fileSize, writer, false);
                 metadata[file] = File.GetLastWriteTimeUtc(file);
                 writer.Commit(); // Commit after each large file
+                onFileProcessed();
             }
             catch (Exception ex)
             {
@@ -132,7 +155,6 @@ public static class LuceneIndexer
         Console.WriteLine($"Finished indexing folder: {folderToIndex}. Time: {stopwatch.ElapsedMilliseconds} ms");
         stopwatch.Stop();
     }
-
 
     private static void ProcessFile(string filePath, string rootFolderPath, long fileSize, IndexWriter writer, bool isSmallFile)
     {

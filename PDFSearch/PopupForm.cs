@@ -1,7 +1,11 @@
-﻿using FindInPDFs.Utilities;
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Windows.Forms;
+using FindInPDFs.Utilities;
 using Microsoft.Win32;
 using PDFSearch;
-using FindInPDFs;
 using FindInPDFs.Acrobat;
 
 namespace FindInPDFs;
@@ -9,11 +13,7 @@ namespace FindInPDFs;
 public partial class PopupForm : Form
 {
     private readonly string folderPath = string.Empty;
-    private readonly Panel overlayPanel;
-    private readonly Label loadingLabel;
     private readonly AcrobatWindowManager acrobatWindowManager;
-
-    // Static reference to keep track of the instance
     private static PopupForm instance;
 
     public PopupForm(string folderPath)
@@ -28,35 +28,12 @@ public partial class PopupForm : Form
 
         if (config == null)
         {
-            // If no config, show the first-time setup
             ShowFirstTimeSetup();
         }
 
         // Prevent the form from being maximized
-        this.FormBorderStyle = FormBorderStyle.FixedSingle; // or FormBorderStyle.FixedDialog
+        this.FormBorderStyle = FormBorderStyle.FixedSingle;
         this.MaximizeBox = false;
-
-        // Create the overlay panel
-        overlayPanel = new Panel
-        {
-            Dock = DockStyle.Fill,
-            BackColor = System.Drawing.Color.FromArgb(64, 128, 128, 128), // Semi-transparent grey
-            Visible = false
-        };
-        this.Controls.Add(overlayPanel);
-        this.Controls.SetChildIndex(overlayPanel, 0); // Ensure overlay is on top
-
-        // Create and configure the loading label
-        loadingLabel = new Label
-        {
-            Text = "Indexing is in progress...\nPlease Wait and do not close the app.",
-            AutoSize = false,
-            TextAlign = System.Drawing.ContentAlignment.MiddleCenter,
-            Dock = DockStyle.Fill,
-            ForeColor = System.Drawing.Color.Black,
-            Font = new System.Drawing.Font("Arial", 8, System.Drawing.FontStyle.Regular)
-        };
-        overlayPanel.Controls.Add(loadingLabel);
 
         instance = this;
     }
@@ -69,13 +46,10 @@ public partial class PopupForm : Form
         {
             if (SearchInPDFs.Instance.WindowState == FormWindowState.Minimized)
             {
-                // Restore the existing PopupForm if it's minimized
-                if (SearchInPDFs.Instance != null && SearchInPDFs.Instance.WindowState == FormWindowState.Minimized)
-                {
-                    SearchInPDFs.Instance.WindowState = FormWindowState.Normal;
-                    this.WindowState = FormWindowState.Minimized;
-                    SearchInPDFs.Instance.BringToFront();
-                }
+                // Restore the existing SearchInPDFs if it's minimized
+                SearchInPDFs.Instance.WindowState = FormWindowState.Normal;
+                this.WindowState = FormWindowState.Minimized;
+                SearchInPDFs.Instance.BringToFront();
             }
         }
         else
@@ -83,7 +57,7 @@ public partial class PopupForm : Form
             // Minimize the current form
             this.WindowState = FormWindowState.Minimized;
 
-            // Show the new search form and arrange windows after it's shown
+            // Show the new search form
             SearchInPDFs searchInPdFs = new(folderPath);
             searchInPdFs.Show();
         }
@@ -91,54 +65,81 @@ public partial class PopupForm : Form
 
     private async void PopupForm_Load(object sender, EventArgs eventArgs)
     {
-        // Show loading indicator and start indexing in background
+        // Start indexing in background and launch Acrobat
         await ProcessIndexingInBackground();
         acrobatWindowManager.FindOrLaunchAcrobatWindow();
     }
 
+    /// <summary>
+    /// Processes indexing in the background with progress feedback.
+    /// </summary>
+        // Existing methods (unchanged): BtnLaunchSearch_Click, PopupForm_Load, 
+    // ShowFirstTimeSetup, GetInstalledPDFReaders, FindExecutable
+
+    /// <summary>
+    /// Processes indexing in the background with progress feedback.
+    /// </summary>
     private async Task ProcessIndexingInBackground()
     {
         try
         {
-            // Show the overlay panel and disable controls on the main thread
+            // Show ProgressBar and disable controls
             Invoke(new Action(() =>
             {
-                overlayPanel.Visible = true;
+                progressBarIndexing.Visible = true;
+                progressBarIndexing.Value = 0;
+                statusLabel.Text = "Indexing started...";
                 foreach (Control control in this.Controls)
                 {
-                    if (control != overlayPanel)
+                    if (control != progressBarIndexing && control != statusLabel)
                     {
-                        control.Enabled = false;
+                        control.Visible = false;
                     }
                 }
-                Console.WriteLine("Indexing started");  // For debugging
+                Console.WriteLine("[INFO] Indexing started");
             }));
 
-            // Perform the indexing in a background thread
-            await Task.Run(() => LuceneIndexer.IndexDirectory(folderPath));
+            // Perform indexing in a background thread
+            await Task.Run(() =>
+            {
+                LuceneIndexer.IndexDirectory(
+                    folderPath,
+                    (progress, total) =>
+                    {
+                        int percentage = (int)((progress / (double)total) * 100);
+                        Invoke(new Action(() =>
+                        {
+                            progressBarIndexing.Value = percentage;
+                            statusLabel.Text = $"Indexing: {percentage}% ({progress}/{total} files)";
+                        }));
+                    });
+            });
+
+            // Indexing completed
+            Invoke(new Action(() =>
+            {
+                statusLabel.Text = "Indexing completed.";
+                progressBarIndexing.Visible = false;
+                foreach (Control control in this.Controls)
+                {
+                    control.Visible = true;
+                }
+                Console.WriteLine("[INFO] Indexing completed");
+            }));
         }
         catch (Exception ex)
         {
-            // Handle the exception as needed
+            // Handle errors
             Invoke(new Action(() =>
             {
-                MessageBox.Show($"Error during indexing: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }));
-        }
-        finally
-        {
-            // Hide the overlay panel and enable controls on the main thread
-            Invoke(new Action(() =>
-            {
-                overlayPanel.Visible = false;
+                statusLabel.Text = $"Error during indexing: {ex.Message}";
+                progressBarIndexing.Visible = false;
                 foreach (Control control in this.Controls)
                 {
-                    if (control != overlayPanel)
-                    {
-                        control.Enabled = true;
-                    }
+                    control.Enabled = true;
                 }
-                Console.WriteLine("Indexing completed");  // For debugging
+                MessageBox.Show($"Error during indexing: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Console.WriteLine($"[ERROR] Indexing failed: {ex.Message}");
             }));
         }
     }
@@ -239,15 +240,15 @@ public partial class PopupForm : Form
         // Registry base paths to check
         string[] registryBasePaths =
         [
-            @"SOFTWARE\Adobe\Adobe Acrobat",           // Full Acrobat installations
-            @"SOFTWARE\Adobe\Acrobat Reader",         // Acrobat Reader installations
-            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", // Uninstall entries
-            @"SOFTWARE\WOW6432Node\Adobe\Adobe Acrobat",           // 32-bit Acrobat on 64-bit systems
-            @"SOFTWARE\WOW6432Node\Adobe\Acrobat Reader",          // 32-bit Reader on 64-bit systems
-            @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall" // 32-bit Uninstall
+            @"SOFTWARE\Adobe\Adobe Acrobat",
+            @"SOFTWARE\Adobe\Acrobat Reader",
+            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+            @"SOFTWARE\WOW6432Node\Adobe\Adobe Acrobat",
+            @"SOFTWARE\WOW6432Node\Adobe\Acrobat Reader",
+            @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
         ];
 
-        // Check HKEY_LOCAL_MACHINE (you can add Registry.CurrentUser if needed)
+        // Check HKEY_LOCAL_MACHINE
         RegistryKey[] rootKeys = [Registry.LocalMachine];
 
         foreach (var rootKey in rootKeys)
@@ -261,7 +262,6 @@ public partial class PopupForm : Form
 
                     if (basePath.Contains("Uninstall"))
                     {
-                        // Search Uninstall keys for Adobe Acrobat or Foxit entries
                         foreach (var subKeyName in key.GetSubKeyNames())
                         {
                             using var subKey = key.OpenSubKey(subKeyName);
@@ -273,7 +273,6 @@ public partial class PopupForm : Form
 
                             if (string.IsNullOrEmpty(displayName)) continue;
 
-                            // Check for Adobe Acrobat or Foxit
                             if (displayName.Contains("Adobe Acrobat") || displayName.Contains("Acrobat Reader"))
                             {
                                 if (!string.IsNullOrEmpty(installLocation))
@@ -297,7 +296,6 @@ public partial class PopupForm : Form
                     }
                     else
                     {
-                        // Search Adobe-specific keys for version subkeys
                         foreach (var version in key.GetSubKeyNames())
                         {
                             using var versionKey = key.OpenSubKey($@"{version}\Installer");
@@ -325,7 +323,6 @@ public partial class PopupForm : Form
                 }
                 catch (Exception)
                 {
-                    // Log exception if needed, e.g., Console.WriteLine($"Error accessing registry: {ex.Message}");
                     continue;
                 }
             }
@@ -334,7 +331,6 @@ public partial class PopupForm : Form
         return pdfReaders;
     }
 
-    // Helper method to find the executable in the installation directory
     private static string? FindExecutable(string installPath, string exeName)
     {
         try
@@ -345,7 +341,6 @@ public partial class PopupForm : Form
                 return fullPath;
             }
 
-            // Search subdirectories (e.g., Reader or Acrobat folder)
             foreach (var dir in Directory.GetDirectories(installPath, "*", SearchOption.AllDirectories))
             {
                 fullPath = Path.Combine(dir, exeName);
@@ -357,7 +352,6 @@ public partial class PopupForm : Form
         }
         catch (Exception)
         {
-            // Ignore errors (e.g., access denied)
         }
         return null;
     }

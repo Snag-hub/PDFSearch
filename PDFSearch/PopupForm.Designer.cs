@@ -30,35 +30,64 @@
         {
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(PopupForm));
             BtnLaunchSearch = new Button();
+            progressBarIndexing = new ProgressBar();
+            statusLabel = new Label();
             SuspendLayout();
             // 
             // BtnLaunchSearch
             // 
-            BtnLaunchSearch.Location = new Point(12, 12);
+            BtnLaunchSearch.Location = new Point(10, 9);
+            BtnLaunchSearch.Margin = new Padding(3, 2, 3, 2);
             BtnLaunchSearch.Name = "BtnLaunchSearch";
-            BtnLaunchSearch.Size = new Size(212, 29);
+            BtnLaunchSearch.Size = new Size(212, 22);
             BtnLaunchSearch.TabIndex = 0;
             BtnLaunchSearch.Text = "Launch Search Interface";
             BtnLaunchSearch.UseVisualStyleBackColor = true;
             BtnLaunchSearch.Click += BtnLaunchSearch_Click;
             // 
+            // progressBarIndexing
+            // 
+            progressBarIndexing.ForeColor = Color.SpringGreen;
+            progressBarIndexing.Location = new Point(10, 22);
+            progressBarIndexing.Name = "progressBarIndexing";
+            progressBarIndexing.Size = new Size(212, 23);
+            progressBarIndexing.TabIndex = 1;
+            progressBarIndexing.Visible = false;
+            // 
+            // statusLabel
+            // 
+            statusLabel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            statusLabel.AutoSize = true;
+            statusLabel.Font = new Font("Arial Nova Cond", 8.25F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            statusLabel.Location = new Point(12, 54);
+            statusLabel.Name = "statusLabel";
+            statusLabel.Size = new Size(34, 14);
+            statusLabel.TabIndex = 2;
+            statusLabel.Text = "Ready";
+            statusLabel.TextAlign = ContentAlignment.MiddleCenter;
+            // 
             // PopupForm
             // 
-            AutoScaleDimensions = new SizeF(8F, 20F);
+            AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(236, 53);
+            ClientSize = new Size(234, 96);
+            Controls.Add(statusLabel);
+            Controls.Add(progressBarIndexing);
             Controls.Add(BtnLaunchSearch);
             Icon = (Icon)resources.GetObject("$this.Icon");
+            Margin = new Padding(3, 2, 3, 2);
             Name = "PopupForm";
             Text = "Search App";
             TopMost = true;
             Load += PopupForm_Load;
-            //Resize += PopupForm_Resize;
             ResumeLayout(false);
+            PerformLayout();
         }
 
         #endregion
 
         private Button BtnLaunchSearch;
+        private ProgressBar progressBarIndexing;
+        private Label statusLabel;
     }
 }
