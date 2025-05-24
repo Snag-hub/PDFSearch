@@ -32,6 +32,7 @@
             BtnLaunchSearch = new Button();
             progressBarIndexing = new ProgressBar();
             statusLabel = new Label();
+            btnPlayPause = new Button();
             SuspendLayout();
             // 
             // BtnLaunchSearch
@@ -66,11 +67,22 @@
             statusLabel.Text = "Ready";
             statusLabel.TextAlign = ContentAlignment.MiddleCenter;
             // 
+            // btnPlayPause
+            // 
+            btnPlayPause.Location = new Point(12, 85);
+            btnPlayPause.Name = "btnPlayPause";
+            btnPlayPause.Size = new Size(210, 23);
+            btnPlayPause.TabIndex = 3;
+            btnPlayPause.Text = "Pause Indexing...";
+            btnPlayPause.UseVisualStyleBackColor = true;
+            btnPlayPause.Click += btnPlayPause_Click;
+            // 
             // PopupForm
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(234, 96);
+            ClientSize = new Size(234, 120);
+            Controls.Add(btnPlayPause);
             Controls.Add(statusLabel);
             Controls.Add(progressBarIndexing);
             Controls.Add(BtnLaunchSearch);
@@ -89,5 +101,6 @@
         private Button BtnLaunchSearch;
         private ProgressBar progressBarIndexing;
         private Label statusLabel;
+        private Button btnPlayPause;
     }
 }

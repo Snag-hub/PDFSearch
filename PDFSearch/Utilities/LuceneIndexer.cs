@@ -23,12 +23,19 @@ public static class LuceneIndexer
     private const int CommitIntervalPages = 2000; // Commit every 2000 pages for large files
     private const int MaxDegreeOfParallelism = 2; // Limit parallel tasks
 
+    private class IndexState
+    {
+        public required string LastIndexedFile { get; set; }
+    }
+
     /// <summary>
-    /// Indexes all PDF files in the specified directory with progress reporting.
+    /// Indexes all PDF files in the specified directory with progress and cancellation support.
     /// </summary>
     /// <param name="folderPath">The directory to index.</param>
     /// <param name="progressCallback">Callback to report progress (current, total files).</param>
-    public static void IndexDirectory(string folderPath, Action<int, int> progressCallback = null)
+    /// <param name="cancellationToken">Token to cancel indexing.</param>
+    public static void IndexDirectory(string folderPath, Action<int, int> progressCallback = null,
+        CancellationToken cancellationToken = default)
     {
         if (!Directory.Exists(folderPath))
         {
@@ -43,8 +50,8 @@ public static class LuceneIndexer
         Directory.CreateDirectory(baseIndexPath);
 
         var metadata = LoadMetadata(folderPath);
+        var state = LoadIndexState(baseIndexPath);
 
-        // Count total new/updated files across all folders for progress
         int totalFiles = foldersToIndex
             .SelectMany(folder => Directory.GetFiles(folder, "*.pdf", SearchOption.AllDirectories))
             .Select(f => (Path: f, Size: new FileInfo(f).Length))
@@ -53,17 +60,23 @@ public static class LuceneIndexer
             .Count(file => !metadata.TryGetValue(file, out var indexedTime) || File.GetLastWriteTimeUtc(file) > indexedTime);
         int processedFiles = 0;
 
+        bool skipFiles = state?.LastIndexedFile != null;
         foreach (var folder in foldersToIndex)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var indexPath = Path.Combine(baseIndexPath, $"index_folder_{Path.GetFileName(folder)}");
             Directory.CreateDirectory(indexPath);
 
             Console.WriteLine($"Indexing folder: {folder}");
-            IndexFolder(folder, indexPath, folderPath, metadata, () =>
+            IndexFolder(folder, indexPath, folderPath, metadata, baseIndexPath, state, skipFiles, () =>
             {
                 Interlocked.Increment(ref processedFiles);
                 progressCallback?.Invoke(processedFiles, totalFiles);
-            });
+            }, cancellationToken);
+
+            // After first folder, stop skipping files
+            skipFiles = false;
         }
 
         SaveMetadata(folderPath, metadata);
@@ -72,7 +85,8 @@ public static class LuceneIndexer
     }
 
     private static void IndexFolder(string folderToIndex, string indexPath, string rootFolderPath,
-        Dictionary<string, DateTime> metadata, Action onFileProcessed)
+        Dictionary<string, DateTime> metadata, string baseIndexPath, IndexState state, bool skipFiles,
+        Action onFileProcessed, CancellationToken cancellationToken)
     {
         var files = Directory.GetFiles(folderToIndex, "*.pdf", SearchOption.AllDirectories)
             .Select(f => (Path: f, Size: new FileInfo(f).Length))
@@ -81,9 +95,23 @@ public static class LuceneIndexer
             .ToList();
 
         var newOrUpdatedFiles = GetNewOrUpdatedFiles(files, metadata);
-        if (!newOrUpdatedFiles.Any())
+        if (newOrUpdatedFiles.Count == 0)
         {
             Console.WriteLine($"No new or updated files in folder: {folderToIndex}");
+            return;
+        }
+
+        // Skip files up to LastIndexedFile
+        if (skipFiles && state?.LastIndexedFile != null)
+        {
+            newOrUpdatedFiles = [.. newOrUpdatedFiles
+                .SkipWhile(f => f != state.LastIndexedFile)
+                .Skip(1)];
+        }
+
+        if (newOrUpdatedFiles.Count == 0)
+        {
+            Console.WriteLine($"All files in folder {folderToIndex} already indexed up to state.");
             return;
         }
 
@@ -107,18 +135,30 @@ public static class LuceneIndexer
             .Where(f => new FileInfo(f).Length >= SmallFileSizeThreshold)
             .ToList();
 
-        if (smallFiles.Any())
+        if (smallFiles.Count != 0)
         {
             Console.WriteLine($"Processing {smallFiles.Count} small files (< 10MB) in parallel...");
-            var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = MaxDegreeOfParallelism };
+            var parallelOptions = new ParallelOptions
+            {
+                MaxDegreeOfParallelism = MaxDegreeOfParallelism,
+                CancellationToken = cancellationToken
+            };
             Parallel.ForEach(smallFiles, parallelOptions, file =>
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 try
                 {
                     var fileSize = new FileInfo(file).Length;
-                    ProcessFile(file, rootFolderPath, fileSize, writer, true);
+                    ProcessFile(file, rootFolderPath, fileSize, writer, true, cancellationToken);
                     metadataUpdates.Add((file, File.GetLastWriteTimeUtc(file)));
+                    SaveIndexState(baseIndexPath, file);
                     onFileProcessed();
+                }
+                catch (OperationCanceledException)
+                {
+                    SaveIndexState(baseIndexPath, file); // Save state before cancelling
+                    throw;
                 }
                 catch (Exception ex)
                 {
@@ -129,14 +169,23 @@ public static class LuceneIndexer
 
         foreach (var file in largeFiles)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             Console.WriteLine($"Processing large file: {file}");
             try
             {
                 var fileSize = new FileInfo(file).Length;
-                ProcessFile(file, rootFolderPath, fileSize, writer, false);
+                ProcessFile(file, rootFolderPath, fileSize, writer, false, cancellationToken);
                 metadata[file] = File.GetLastWriteTimeUtc(file);
                 writer.Commit(); // Commit after each large file
+                SaveIndexState(baseIndexPath, file);
                 onFileProcessed();
+            }
+            catch (OperationCanceledException)
+            {
+                SaveIndexState(baseIndexPath, file);
+                writer.Commit();
+                throw;
             }
             catch (Exception ex)
             {
@@ -156,7 +205,8 @@ public static class LuceneIndexer
         stopwatch.Stop();
     }
 
-    private static void ProcessFile(string filePath, string rootFolderPath, long fileSize, IndexWriter writer, bool isSmallFile)
+    private static void ProcessFile(string filePath, string rootFolderPath, long fileSize, IndexWriter writer,
+        bool isSmallFile, CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
         var pages = PdfHelper.ExtractTextFromLargePdf(filePath, fileSize);
@@ -168,13 +218,14 @@ public static class LuceneIndexer
 
         Console.WriteLine($"Extracted {pages.Count} pages from file: {filePath} in {stopwatch.ElapsedMilliseconds} ms");
 
-        // Process pages in batches of 100 for indexing
         var pageBatch = new List<KeyValuePair<int, string>>();
         int batchCount = 0;
         int pagesProcessed = 0;
 
-        foreach (var page in pages.OrderBy(p => p.Key)) // Ensure pages are processed in order
+        foreach (var page in pages.OrderBy(p => p.Key))
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             pageBatch.Add(page);
 
             if (pageBatch.Count >= DocumentsPerBatch || page.Key == pages.Keys.Max())
@@ -206,7 +257,6 @@ public static class LuceneIndexer
 
                 Console.WriteLine($"Indexed batch {batchCount} for '{filePath}' (pages {page.Key - docs.Count + 1} to {page.Key}, {docs.Count} pages) in {batchStopwatch.ElapsedMilliseconds} ms");
 
-                // Commit every 2000 pages for large files
                 if (!isSmallFile && pagesProcessed >= CommitIntervalPages)
                 {
                     writer.Commit();
@@ -234,12 +284,27 @@ public static class LuceneIndexer
         File.WriteAllText(metadataFilePath, JsonSerializer.Serialize(metadata));
     }
 
+    private static IndexState? LoadIndexState(string baseIndexPath)
+    {
+        var stateFilePath = Path.Combine(baseIndexPath, "indexState.json");
+        return File.Exists(stateFilePath) ?
+            JsonSerializer.Deserialize<IndexState>(File.ReadAllText(stateFilePath)) :
+            null;
+    }
+
+    private static void SaveIndexState(string baseIndexPath, string lastIndexedFile)
+    {
+        var stateFilePath = Path.Combine(baseIndexPath, "indexState.json");
+        var state = new IndexState { LastIndexedFile = lastIndexedFile };
+        File.WriteAllText(stateFilePath, JsonSerializer.Serialize(state));
+    }
+
     private static List<string> GetNewOrUpdatedFiles(List<string> files, Dictionary<string, DateTime> metadata)
     {
-        return files.Where(file =>
+        return [.. files.Where(file =>
         {
             var lastModified = File.GetLastWriteTimeUtc(file);
             return !metadata.TryGetValue(file, out var indexedTime) || lastModified > indexedTime;
-        }).ToList();
+        })];
     }
 }

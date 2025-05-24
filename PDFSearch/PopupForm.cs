@@ -1,12 +1,14 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Windows.Forms;
+﻿using FindInPDFs.Acrobat;
 using FindInPDFs.Utilities;
 using Microsoft.Win32;
 using PDFSearch;
-using FindInPDFs.Acrobat;
+using PDFSearch.Utilities;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Windows.Forms;
 
 namespace FindInPDFs;
 
@@ -15,6 +17,7 @@ public partial class PopupForm : Form
     private readonly string folderPath = string.Empty;
     private readonly AcrobatWindowManager acrobatWindowManager;
     private static PopupForm instance;
+    private CancellationTokenSource _indexingCts;
 
     public PopupForm(string folderPath)
     {
@@ -22,6 +25,7 @@ public partial class PopupForm : Form
         InitializeComponent();
 
         acrobatWindowManager = new AcrobatWindowManager(folderPath);
+        _indexingCts = new CancellationTokenSource();
 
         // Check if configuration exists
         ConfigManager config = ConfigManager.LoadConfig(folderPath);
@@ -35,10 +39,62 @@ public partial class PopupForm : Form
         this.FormBorderStyle = FormBorderStyle.FixedSingle;
         this.MaximizeBox = false;
 
+        // Check for previous indexing state
+        var stateFilePath = Path.Combine(FolderUtility.GetFolderForPath(folderPath), "indexState.json");
+        if (File.Exists(stateFilePath))
+        {
+            statusLabel.Text = "Previous indexing paused. Click Start to resume.";
+        }
+
         instance = this;
     }
 
     public static PopupForm Instance => instance;
+
+    private async void PopupForm_Load(object sender, EventArgs e)
+    {
+        // Launch Acrobat window
+        await ProcessIndexingInBackground();
+        acrobatWindowManager.FindOrLaunchAcrobatWindow();
+    }
+
+    private void btnPlayPause_Click(object sender, EventArgs e)
+    {
+        try
+        {
+            if (_indexingCts.Token.IsCancellationRequested)
+            {
+                // Start or resume indexing
+                _indexingCts = new CancellationTokenSource();
+                btnPlayPause.Text = "Pause";
+                statusLabel.Text = "Indexing started...";
+            }
+            else
+            {
+                // Cancel indexing (pause)
+                _indexingCts.Cancel();
+                btnPlayPause.Text = "Start Indexing";
+                btnPlayPause.Visible = false; // Hide to enforce restart
+                statusLabel.Text = "Indexing cancelled. Restart the application to resume.";
+            }
+        }
+        catch (Exception ex)
+        {
+            Invoke(new Action(() =>
+            {
+                statusLabel.Text = $"Error: {ex.Message}";
+                progressBarIndexing.Visible = false;
+                btnPlayPause.Text = "Start Indexing";
+                btnPlayPause.Visible = false;
+                foreach (Control control in this.Controls)
+                {
+                    control.Visible = true;
+                }
+                MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Console.WriteLine($"[ERROR] Play/Pause error: {ex.Message}");
+            }));
+        }
+    }
 
     private void BtnLaunchSearch_Click(object sender, EventArgs e)
     {
@@ -63,19 +119,6 @@ public partial class PopupForm : Form
         }
     }
 
-    private async void PopupForm_Load(object sender, EventArgs eventArgs)
-    {
-        // Start indexing in background and launch Acrobat
-        await ProcessIndexingInBackground();
-        acrobatWindowManager.FindOrLaunchAcrobatWindow();
-    }
-
-    /// <summary>
-    /// Processes indexing in the background with progress feedback.
-    /// </summary>
-        // Existing methods (unchanged): BtnLaunchSearch_Click, PopupForm_Load, 
-    // ShowFirstTimeSetup, GetInstalledPDFReaders, FindExecutable
-
     /// <summary>
     /// Processes indexing in the background with progress feedback.
     /// </summary>
@@ -91,7 +134,7 @@ public partial class PopupForm : Form
                 statusLabel.Text = "Indexing started...";
                 foreach (Control control in this.Controls)
                 {
-                    if (control != progressBarIndexing && control != statusLabel)
+                    if (control != progressBarIndexing && control != statusLabel && control != btnPlayPause)
                     {
                         control.Visible = false;
                     }
@@ -112,7 +155,8 @@ public partial class PopupForm : Form
                             progressBarIndexing.Value = percentage;
                             statusLabel.Text = $"Indexing: {percentage}% ({progress}/{total} files)";
                         }));
-                    });
+                    },
+                    _indexingCts.Token);
             });
 
             // Indexing completed
@@ -120,11 +164,33 @@ public partial class PopupForm : Form
             {
                 statusLabel.Text = "Indexing completed.";
                 progressBarIndexing.Visible = false;
+                btnPlayPause.Visible = false; // Hide after completion
                 foreach (Control control in this.Controls)
                 {
                     control.Visible = true;
                 }
+                // Clear state on completion
+                var stateFilePath = Path.Combine(FolderUtility.GetFolderForPath(folderPath), "indexState.json");
+                if (File.Exists(stateFilePath))
+                {
+                    File.Delete(stateFilePath);
+                }
                 Console.WriteLine("[INFO] Indexing completed");
+            }));
+        }
+        catch (OperationCanceledException)
+        {
+            // Indexing cancelled
+            Invoke(new Action(() =>
+            {
+                statusLabel.Text = "Indexing cancelled. Restart the application to resume.";
+                progressBarIndexing.Visible = false;
+                btnPlayPause.Visible = false;
+                foreach (Control control in this.Controls)
+                {
+                    control.Visible = true;
+                }
+                Console.WriteLine("[INFO] Indexing cancelled");
             }));
         }
         catch (Exception ex)
@@ -134,9 +200,10 @@ public partial class PopupForm : Form
             {
                 statusLabel.Text = $"Error during indexing: {ex.Message}";
                 progressBarIndexing.Visible = false;
+                btnPlayPause.Visible = false;
                 foreach (Control control in this.Controls)
                 {
-                    control.Enabled = true;
+                    control.Visible = true;
                 }
                 MessageBox.Show($"Error during indexing: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 Console.WriteLine($"[ERROR] Indexing failed: {ex.Message}");
