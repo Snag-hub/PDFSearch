@@ -43,7 +43,11 @@ public partial class PopupForm : Form
         var stateFilePath = Path.Combine(FolderUtility.GetFolderForPath(folderPath), "indexState.json");
         if (File.Exists(stateFilePath))
         {
-            statusLabel.Text = "Previous indexing paused. Click Start to resume.";
+            statusLabel.Text = "Previous indexing paused. Indexing will resume.";
+        }
+        else
+        {
+            statusLabel.Text = "Ready to start indexing.";
         }
 
         instance = this;
@@ -53,8 +57,14 @@ public partial class PopupForm : Form
 
     private async void PopupForm_Load(object sender, EventArgs e)
     {
-        // Launch Acrobat window
+
+        // Start indexing automatically
+        btnPlayPause.Text = "Pause";
+        btnPlayPause.Visible = true;
+        statusLabel.Text = "Indexing started...";
         await ProcessIndexingInBackground();
+
+        // Launch Acrobat window
         acrobatWindowManager.FindOrLaunchAcrobatWindow();
     }
 
@@ -62,21 +72,10 @@ public partial class PopupForm : Form
     {
         try
         {
-            if (_indexingCts.Token.IsCancellationRequested)
-            {
-                // Start or resume indexing
-                _indexingCts = new CancellationTokenSource();
-                btnPlayPause.Text = "Pause";
-                statusLabel.Text = "Indexing started...";
-            }
-            else
-            {
-                // Cancel indexing (pause)
-                _indexingCts.Cancel();
-                btnPlayPause.Text = "Start Indexing";
-                btnPlayPause.Visible = false; // Hide to enforce restart
-                statusLabel.Text = "Indexing cancelled. Restart the application to resume.";
-            }
+            // Cancel indexing (pause)
+            _indexingCts.Cancel();
+            btnPlayPause.Visible = false; // Hide to enforce restart
+            statusLabel.Text = "Indexing cancelled. Restart the application to resume.";
         }
         catch (Exception ex)
         {
@@ -84,7 +83,6 @@ public partial class PopupForm : Form
             {
                 statusLabel.Text = $"Error: {ex.Message}";
                 progressBarIndexing.Visible = false;
-                btnPlayPause.Text = "Start Indexing";
                 btnPlayPause.Visible = false;
                 foreach (Control control in this.Controls)
                 {
@@ -126,7 +124,7 @@ public partial class PopupForm : Form
     {
         try
         {
-            // Show ProgressBar and disable controls
+            // Show ProgressBar and hide controls
             Invoke(new Action(() =>
             {
                 progressBarIndexing.Visible = true;
@@ -149,10 +147,10 @@ public partial class PopupForm : Form
                     folderPath,
                     (progress, total) =>
                     {
-                        int percentage = (int)((progress / (double)total) * 100);
+                        int percentage = total > 0 ? (int)((progress / (double)total) * 100) : 0;
                         Invoke(new Action(() =>
                         {
-                            progressBarIndexing.Value = percentage;
+                            progressBarIndexing.Value = Math.Min(percentage, 100);
                             statusLabel.Text = $"Indexing: {percentage}% ({progress}/{total} files)";
                         }));
                     },
@@ -164,7 +162,7 @@ public partial class PopupForm : Form
             {
                 statusLabel.Text = "Indexing completed.";
                 progressBarIndexing.Visible = false;
-                btnPlayPause.Visible = false; // Hide after completion
+                btnPlayPause.Visible = false;
                 foreach (Control control in this.Controls)
                 {
                     control.Visible = true;

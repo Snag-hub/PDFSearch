@@ -25,7 +25,7 @@ public static class LuceneIndexer
 
     private class IndexState
     {
-        public required string LastIndexedFile { get; set; }
+        public string LastIndexedFile { get; set; }
     }
 
     /// <summary>
@@ -52,13 +52,22 @@ public static class LuceneIndexer
         var metadata = LoadMetadata(folderPath);
         var state = LoadIndexState(baseIndexPath);
 
-        int totalFiles = foldersToIndex
+        // Count all PDF files for totalFiles
+        var allFiles = foldersToIndex
             .SelectMany(folder => Directory.GetFiles(folder, "*.pdf", SearchOption.AllDirectories))
             .Select(f => (Path: f, Size: new FileInfo(f).Length))
             .OrderBy(f => f.Size)
             .Select(f => f.Path)
-            .Count(file => !metadata.TryGetValue(file, out var indexedTime) || File.GetLastWriteTimeUtc(file) > indexedTime);
-        int processedFiles = 0;
+            .ToList();
+        int totalFiles = allFiles.Count;
+
+        // Count already indexed files
+        int processedFiles = metadata.Count; // Files in indexedFiles.json
+        if (state?.LastIndexedFile != null)
+        {
+            // Adjust processedFiles to include files up to LastIndexedFile
+            processedFiles = allFiles.TakeWhile(f => f != state.LastIndexedFile).Count() + 1;
+        }
 
         bool skipFiles = state?.LastIndexedFile != null;
         foreach (var folder in foldersToIndex)
@@ -274,8 +283,8 @@ public static class LuceneIndexer
     {
         var metadataFilePath = Path.Combine(FolderUtility.GetFolderForPath(folderPath), "indexedFiles.json");
         return File.Exists(metadataFilePath) ?
-            JsonSerializer.Deserialize<Dictionary<string, DateTime>>(File.ReadAllText(metadataFilePath)) ?? new Dictionary<string, DateTime>() :
-            new Dictionary<string, DateTime>();
+            JsonSerializer.Deserialize<Dictionary<string, DateTime>>(File.ReadAllText(metadataFilePath)) ?? [] :
+            [];
     }
 
     private static void SaveMetadata(string folderPath, Dictionary<string, DateTime> metadata)
