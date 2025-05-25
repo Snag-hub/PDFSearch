@@ -5,6 +5,7 @@ using PDFSearch;
 using PDFSearch.Utilities;
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -34,7 +35,12 @@ public partial class PopupForm : Form
 
         if (config == null)
         {
-            ShowFirstTimeSetup();
+            if (!ShowFirstTimeSetup())
+            {
+                AcrobatWindowManager.EnsureAcrobatClosed();
+                this.Close();
+                return;
+            }
         }
 
         // Prevent the form from being maximized
@@ -59,7 +65,6 @@ public partial class PopupForm : Form
 
     private async void PopupForm_Load(object sender, EventArgs e)
     {
-
         // Start indexing automatically
         btnPlayPause.Text = "Pause";
         btnPlayPause.Visible = true;
@@ -119,9 +124,6 @@ public partial class PopupForm : Form
         }
     }
 
-    /// <summary>
-    /// Processes indexing in the background with progress feedback.
-    /// </summary>
     private async Task ProcessIndexingInBackground()
     {
         try
@@ -167,7 +169,7 @@ public partial class PopupForm : Form
                 btnPlayPause.Visible = false;
                 foreach (Control control in this.Controls)
                 {
-                    if(control != progressBarIndexing && control != btnPlayPause)
+                    if (control != progressBarIndexing && control != btnPlayPause)
                         control.Visible = true;
 
                     // adjust the height of the popform after indexing complete.
@@ -184,7 +186,6 @@ public partial class PopupForm : Form
         }
         catch (OperationCanceledException)
         {
-            // todo: Handle cancellation gracefully and make sure after pausing only launch button and statusLabel should be visible
             // Indexing cancelled
             Invoke(new Action(() =>
             {
@@ -217,7 +218,6 @@ public partial class PopupForm : Form
 
                     // adjust the height of the popform after indexing error.
                     this.Size = new Size(250, FHeight);
-
                 }
                 MessageBox.Show($"There is some error while Indexing.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 Console.WriteLine($"[ERROR] Indexing failed: {ex.Message}");
@@ -225,45 +225,36 @@ public partial class PopupForm : Form
         }
     }
 
-    private void ShowFirstTimeSetup()
+    private bool ShowFirstTimeSetup()
     {
-        // Ensure parent form is normal
         this.WindowState = FormWindowState.Normal;
-
-        // Show file dialog for index.pdf
         OpenFileDialog openFileDialog = new()
         {
             Filter = "PDF Files|*.pdf",
             Title = "Select the Start/Landing Page File (index.pdf)"
         };
-
         if (openFileDialog.ShowDialog() != DialogResult.OK)
         {
-            MessageBox.Show("Setup cancelled. Please select a start file to continue.", "Setup Cancelled", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
+            MessageBox.Show("Setup cancelled. Application will close.", "Setup Cancelled", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            Console.WriteLine("[DEBUG] OpenFileDialog cancelled, closing application");
+            return false;
         }
-
         string startFile = openFileDialog.FileName;
-
-        // Validate startFile is in folderPath and readable
         if (!startFile.StartsWith(folderPath, StringComparison.OrdinalIgnoreCase) || !File.Exists(startFile))
         {
             MessageBox.Show("Selected start file must be within the dataset folder and accessible.", "Invalid File", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            return;
+            Console.WriteLine("[DEBUG] Invalid start file, closing application");
+            return false;
         }
-
-        // Get installed PDF readers
         var installedReaders = GetInstalledPDFReaders();
-
         if (installedReaders.Count == 0)
         {
             MessageBox.Show("No PDF readers found on the system. Please install a PDF reader and try again.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            return;
+            Console.WriteLine("[DEBUG] No PDF readers found, closing application");
+            return false;
         }
-
-        // Create a form for PDF reader selection
         int radioButtonHeight = 30;
-        int formHeight = 100 + (installedReaders.Count * radioButtonHeight) + 60; // Label + RadioButtons + Buttons + Margins
+        int formHeight = 100 + (installedReaders.Count * radioButtonHeight) + 60;
         Form selectionForm = new()
         {
             Text = "Select PDF Reader",
@@ -272,16 +263,12 @@ public partial class PopupForm : Form
             StartPosition = FormStartPosition.CenterScreen,
             WindowState = FormWindowState.Normal
         };
-
-        // Ensure normal state in Load event
         selectionForm.Load += (s, e) =>
         {
             selectionForm.WindowState = FormWindowState.Normal;
             selectionForm.Activate();
             Console.WriteLine($"[DEBUG] selectionForm WindowState: {selectionForm.WindowState}");
         };
-
-        // Add a label
         Label label = new()
         {
             Text = "Select your preferred PDF reader:",
@@ -289,8 +276,6 @@ public partial class PopupForm : Form
             AutoSize = true
         };
         selectionForm.Controls.Add(label);
-
-        // Add RadioButtons for each PDF reader
         int yOffset = 50;
         bool firstRadioButton = true;
         foreach (var reader in installedReaders)
@@ -300,14 +285,12 @@ public partial class PopupForm : Form
                 Text = reader.Key,
                 Location = new System.Drawing.Point(20, yOffset),
                 AutoSize = true,
-                Checked = firstRadioButton // Select first reader by default
+                Checked = firstRadioButton
             };
             selectionForm.Controls.Add(radioButton);
             yOffset += radioButtonHeight;
             firstRadioButton = false;
         }
-
-        // Add OK and Cancel buttons
         Button okButton = new()
         {
             Text = "OK",
@@ -315,7 +298,6 @@ public partial class PopupForm : Form
             DialogResult = DialogResult.OK
         };
         selectionForm.Controls.Add(okButton);
-
         Button cancelButton = new()
         {
             Text = "Cancel",
@@ -323,31 +305,25 @@ public partial class PopupForm : Form
             DialogResult = DialogResult.Cancel
         };
         selectionForm.Controls.Add(cancelButton);
-
-        // Show the selection form and ensure it's focused
         Console.WriteLine($"[DEBUG] Before ShowDialog, WindowState: {selectionForm.WindowState}");
         DialogResult result = selectionForm.ShowDialog();
         selectionForm.Activate();
         Console.WriteLine($"[DEBUG] After ShowDialog, DialogResult: {result}");
-
         if (result != DialogResult.OK)
         {
-            MessageBox.Show("Setup cancelled. Please select a PDF reader to continue.", "Setup Cancelled", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
+            MessageBox.Show("Setup cancelled. Application will close.", "Setup Cancelled", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            Console.WriteLine("[DEBUG] selectionForm cancelled, closing application");
+            return false;
         }
-
         string? selectedReaderName = selectionForm.Controls.OfType<RadioButton>()
             .FirstOrDefault(rb => rb.Checked)?.Text;
-
         if (selectedReaderName == null)
         {
             MessageBox.Show("Please select a PDF reader.", "No Selection", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            return;
+            Console.WriteLine("[DEBUG] No PDF reader selected, closing application");
+            return false;
         }
-
         string selectedReaderPath = installedReaders[selectedReaderName];
-
-        // Save the config
         try
         {
             ConfigManager config = new()
@@ -357,32 +333,31 @@ public partial class PopupForm : Form
             };
             config.SaveConfig(folderPath);
             MessageBox.Show("Configuration saved successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            Console.WriteLine("[DEBUG] Configuration saved successfully");
+            return true;
         }
         catch (Exception ex)
         {
             MessageBox.Show($"Failed to save configuration: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             Console.WriteLine($"[ERROR] Config save failed: {ex.Message}");
+            return false;
         }
     }
 
     private static Dictionary<string, string> GetInstalledPDFReaders()
     {
-        var pdfReaders = new Dictionary<string, string>();
-
-        // Registry base paths to check
+        var pdfReaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var uniqueReaders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         string[] registryBasePaths =
         [
-            @"SOFTWARE\Adobe\Adobe Acrobat",
             @"SOFTWARE\Adobe\Acrobat Reader",
-            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
-            @"SOFTWARE\WOW6432Node\Adobe\Adobe Acrobat",
+            @"SOFTWARE\Adobe\Adobe Acrobat",
             @"SOFTWARE\WOW6432Node\Adobe\Acrobat Reader",
+            @"SOFTWARE\WOW6432Node\Adobe\Adobe Acrobat",
+            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
             @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
         ];
-
-        // Check HKEY_LOCAL_MACHINE
         RegistryKey[] rootKeys = [Registry.LocalMachine];
-
         foreach (var rootKey in rootKeys)
         {
             foreach (var basePath in registryBasePaths)
@@ -391,38 +366,38 @@ public partial class PopupForm : Form
                 {
                     using var key = rootKey.OpenSubKey(basePath);
                     if (key == null) continue;
-
                     if (basePath.Contains("Uninstall"))
                     {
                         foreach (var subKeyName in key.GetSubKeyNames())
                         {
                             using var subKey = key.OpenSubKey(subKeyName);
                             if (subKey == null) continue;
-
                             var displayName = subKey.GetValue("DisplayName")?.ToString();
                             var installLocation = subKey.GetValue("InstallLocation")?.ToString();
-                            var exePath = "";
-
                             if (string.IsNullOrEmpty(displayName)) continue;
-
-                            if (displayName.Contains("Adobe Acrobat") || displayName.Contains("Acrobat Reader"))
+                            string exePath = null;
+                            if (displayName.Contains("Adobe Acrobat", StringComparison.OrdinalIgnoreCase))
                             {
                                 if (!string.IsNullOrEmpty(installLocation))
                                 {
                                     exePath = FindExecutable(installLocation, "Acrobat.exe") ?? FindExecutable(installLocation, "AcroRd32.exe");
                                 }
                             }
-                            else if (displayName.Contains("Foxit Reader"))
+                            else if (displayName.Contains("Foxit Reader", StringComparison.OrdinalIgnoreCase))
                             {
                                 if (!string.IsNullOrEmpty(installLocation))
                                 {
                                     exePath = FindExecutable(installLocation, "FoxitReader.exe");
                                 }
                             }
-
-                            if (!string.IsNullOrEmpty(exePath) && !pdfReaders.ContainsKey(displayName))
+                            if (!string.IsNullOrEmpty(exePath))
                             {
-                                pdfReaders.Add(displayName, exePath);
+                                string normalizedName = NormalizeReaderName(displayName, exePath);
+                                if (uniqueReaders.Add(normalizedName))
+                                {
+                                    pdfReaders[normalizedName] = exePath;
+                                    Console.WriteLine($"[DEBUG] Added reader: {normalizedName}, Path: {exePath}");
+                                }
                             }
                         }
                     }
@@ -432,35 +407,58 @@ public partial class PopupForm : Form
                         {
                             using var versionKey = key.OpenSubKey($@"{version}\Installer");
                             if (versionKey == null) continue;
-
                             var installPath = versionKey.GetValue("Path")?.ToString();
                             if (string.IsNullOrEmpty(installPath)) continue;
-
                             var exePath = basePath.Contains("Acrobat Reader")
                                 ? FindExecutable(installPath, "AcroRd32.exe")
                                 : FindExecutable(installPath, "Acrobat.exe");
-
                             if (!string.IsNullOrEmpty(exePath))
                             {
-                                var name = basePath.Contains("Acrobat Reader")
+                                string name = basePath.Contains("Acrobat Reader")
                                     ? $"Adobe Acrobat Reader {version}"
                                     : $"Adobe Acrobat {version}";
-                                if (!pdfReaders.ContainsKey(name))
+                                string normalizedName = NormalizeReaderName(name, exePath);
+                                if (uniqueReaders.Add(normalizedName))
                                 {
-                                    pdfReaders.Add(name, exePath);
+                                    pdfReaders[normalizedName] = exePath;
+                                    Console.WriteLine($"[DEBUG] Added reader: {normalizedName}, Path: {exePath}");
                                 }
                             }
                         }
                     }
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    Console.WriteLine($"[DEBUG] Registry error at {basePath}: {ex.Message}");
                     continue;
                 }
             }
         }
-
         return pdfReaders;
+    }
+
+    private static string NormalizeReaderName(string name, string exePath)
+    {
+        if (string.IsNullOrEmpty(name))
+            return name;
+        name = name.Trim();
+        if (exePath.Contains("AcroRd32.exe", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Adobe Acrobat Reader";
+        }
+        else if (exePath.Contains("Acrobat.exe", StringComparison.OrdinalIgnoreCase))
+        {
+            if (name.Contains("Pro", StringComparison.OrdinalIgnoreCase) || name.Contains("XI", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Adobe Acrobat Pro 11";
+            }
+            return "Adobe Acrobat";
+        }
+        else if (name.Contains("Foxit Reader", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Foxit Reader";
+        }
+        return name;
     }
 
     private static string? FindExecutable(string installPath, string exeName)
@@ -472,7 +470,6 @@ public partial class PopupForm : Form
             {
                 return fullPath;
             }
-
             foreach (var dir in Directory.GetDirectories(installPath, "*", SearchOption.AllDirectories))
             {
                 fullPath = Path.Combine(dir, exeName);
