@@ -19,6 +19,8 @@ public partial class PopupForm : Form
     private static PopupForm instance;
     private CancellationTokenSource _indexingCts;
 
+    private const int FHeight = 120;
+
     public PopupForm(string folderPath)
     {
         this.folderPath = folderPath;
@@ -75,7 +77,7 @@ public partial class PopupForm : Form
             // Cancel indexing (pause)
             _indexingCts.Cancel();
             btnPlayPause.Visible = false; // Hide to enforce restart
-            statusLabel.Text = "Indexing cancelled. Restart the application to resume.";
+            statusLabel.Text = "Indexing cancelled. \nRestart the application to resume.";
         }
         catch (Exception ex)
         {
@@ -165,7 +167,11 @@ public partial class PopupForm : Form
                 btnPlayPause.Visible = false;
                 foreach (Control control in this.Controls)
                 {
-                    control.Visible = true;
+                    if(control != progressBarIndexing && control != btnPlayPause)
+                        control.Visible = true;
+
+                    // adjust the height of the popform after indexing complete.
+                    this.Size = new Size(250, FHeight);
                 }
                 // Clear state on completion
                 var stateFilePath = Path.Combine(FolderUtility.GetFolderForPath(folderPath), "indexState.json");
@@ -178,15 +184,20 @@ public partial class PopupForm : Form
         }
         catch (OperationCanceledException)
         {
+            // todo: Handle cancellation gracefully and make sure after pausing only launch button and statusLabel should be visible
             // Indexing cancelled
             Invoke(new Action(() =>
             {
-                statusLabel.Text = "Indexing cancelled. Restart the application to resume.";
+                statusLabel.Text = "Indexing cancelled. \nRestart the application to resume.";
                 progressBarIndexing.Visible = false;
                 btnPlayPause.Visible = false;
                 foreach (Control control in this.Controls)
                 {
-                    control.Visible = true;
+                    if (control != progressBarIndexing && control != btnPlayPause)
+                        control.Visible = true;
+
+                    // adjust the height of the popform after indexing pause.
+                    this.Size = new Size(250, FHeight);
                 }
                 Console.WriteLine("[INFO] Indexing cancelled");
             }));
@@ -201,9 +212,14 @@ public partial class PopupForm : Form
                 btnPlayPause.Visible = false;
                 foreach (Control control in this.Controls)
                 {
-                    control.Visible = true;
+                    if (control != progressBarIndexing && control != btnPlayPause)
+                        control.Visible = true;
+
+                    // adjust the height of the popform after indexing error.
+                    this.Size = new Size(250, FHeight);
+
                 }
-                MessageBox.Show($"Error during indexing: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"There is some error while Indexing.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 Console.WriteLine($"[ERROR] Indexing failed: {ex.Message}");
             }));
         }
@@ -211,6 +227,9 @@ public partial class PopupForm : Form
 
     private void ShowFirstTimeSetup()
     {
+        // Ensure parent form is normal
+        this.WindowState = FormWindowState.Normal;
+
         // Show file dialog for index.pdf
         OpenFileDialog openFileDialog = new()
         {
@@ -218,83 +237,131 @@ public partial class PopupForm : Form
             Title = "Select the Start/Landing Page File (index.pdf)"
         };
 
-        if (openFileDialog.ShowDialog() == DialogResult.OK)
+        if (openFileDialog.ShowDialog() != DialogResult.OK)
         {
-            string startFile = openFileDialog.FileName;
+            MessageBox.Show("Setup cancelled. Please select a start file to continue.", "Setup Cancelled", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
 
-            // Get installed PDF readers
-            var installedReaders = GetInstalledPDFReaders();
+        string startFile = openFileDialog.FileName;
 
-            if (installedReaders.Count == 0)
+        // Validate startFile is in folderPath and readable
+        if (!startFile.StartsWith(folderPath, StringComparison.OrdinalIgnoreCase) || !File.Exists(startFile))
+        {
+            MessageBox.Show("Selected start file must be within the dataset folder and accessible.", "Invalid File", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+
+        // Get installed PDF readers
+        var installedReaders = GetInstalledPDFReaders();
+
+        if (installedReaders.Count == 0)
+        {
+            MessageBox.Show("No PDF readers found on the system. Please install a PDF reader and try again.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+
+        // Create a form for PDF reader selection
+        int radioButtonHeight = 30;
+        int formHeight = 100 + (installedReaders.Count * radioButtonHeight) + 60; // Label + RadioButtons + Buttons + Margins
+        Form selectionForm = new()
+        {
+            Text = "Select PDF Reader",
+            Size = new System.Drawing.Size(400, Math.Min(formHeight, 600)),
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            StartPosition = FormStartPosition.CenterScreen,
+            WindowState = FormWindowState.Normal
+        };
+
+        // Ensure normal state in Load event
+        selectionForm.Load += (s, e) =>
+        {
+            selectionForm.WindowState = FormWindowState.Normal;
+            selectionForm.Activate();
+            Console.WriteLine($"[DEBUG] selectionForm WindowState: {selectionForm.WindowState}");
+        };
+
+        // Add a label
+        Label label = new()
+        {
+            Text = "Select your preferred PDF reader:",
+            Location = new System.Drawing.Point(20, 20),
+            AutoSize = true
+        };
+        selectionForm.Controls.Add(label);
+
+        // Add RadioButtons for each PDF reader
+        int yOffset = 50;
+        bool firstRadioButton = true;
+        foreach (var reader in installedReaders)
+        {
+            RadioButton radioButton = new()
             {
-                MessageBox.Show("No PDF readers found on the system. Please install a PDF reader and try again.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-
-            // Create a form for PDF reader selection
-            Form selectionForm = new()
-            {
-                Text = "Select PDF Reader",
-                Size = new System.Drawing.Size(400, 400),
-                FormBorderStyle = FormBorderStyle.FixedDialog,
-                StartPosition = FormStartPosition.CenterScreen,
-                WindowState = FormWindowState.Normal
+                Text = reader.Key,
+                Location = new System.Drawing.Point(20, yOffset),
+                AutoSize = true,
+                Checked = firstRadioButton // Select first reader by default
             };
+            selectionForm.Controls.Add(radioButton);
+            yOffset += radioButtonHeight;
+            firstRadioButton = false;
+        }
 
-            // Add a label
-            Label label = new()
+        // Add OK and Cancel buttons
+        Button okButton = new()
+        {
+            Text = "OK",
+            Location = new System.Drawing.Point(100, yOffset + 20),
+            DialogResult = DialogResult.OK
+        };
+        selectionForm.Controls.Add(okButton);
+
+        Button cancelButton = new()
+        {
+            Text = "Cancel",
+            Location = new System.Drawing.Point(200, yOffset + 20),
+            DialogResult = DialogResult.Cancel
+        };
+        selectionForm.Controls.Add(cancelButton);
+
+        // Show the selection form and ensure it's focused
+        Console.WriteLine($"[DEBUG] Before ShowDialog, WindowState: {selectionForm.WindowState}");
+        DialogResult result = selectionForm.ShowDialog();
+        selectionForm.Activate();
+        Console.WriteLine($"[DEBUG] After ShowDialog, DialogResult: {result}");
+
+        if (result != DialogResult.OK)
+        {
+            MessageBox.Show("Setup cancelled. Please select a PDF reader to continue.", "Setup Cancelled", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        string? selectedReaderName = selectionForm.Controls.OfType<RadioButton>()
+            .FirstOrDefault(rb => rb.Checked)?.Text;
+
+        if (selectedReaderName == null)
+        {
+            MessageBox.Show("Please select a PDF reader.", "No Selection", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+
+        string selectedReaderPath = installedReaders[selectedReaderName];
+
+        // Save the config
+        try
+        {
+            ConfigManager config = new()
             {
-                Text = "Select your preferred PDF reader:",
-                Location = new System.Drawing.Point(20, 20),
-                AutoSize = true
+                StartFile = startFile,
+                PdfOpener = selectedReaderPath
             };
-            selectionForm.Controls.Add(label);
-
-            // Add RadioButtons for each PDF reader
-            int yOffset = 50;
-            foreach (var reader in installedReaders)
-            {
-                RadioButton radioButton = new()
-                {
-                    Text = reader.Key,
-                    Location = new System.Drawing.Point(20, yOffset),
-                    AutoSize = true
-                };
-                selectionForm.Controls.Add(radioButton);
-                yOffset += 30;
-            }
-
-            // Add an OK button
-            Button okButton = new()
-            {
-                Text = "OK",
-                Location = new System.Drawing.Point(150, yOffset),
-                DialogResult = DialogResult.OK
-            };
-            selectionForm.Controls.Add(okButton);
-
-            // Show the selection form
-            if (selectionForm.ShowDialog() == DialogResult.OK)
-            {
-                string? selectedReaderName = selectionForm.Controls.OfType<RadioButton>()
-                    .FirstOrDefault(rb => rb.Checked)?.Text;
-
-                if (selectedReaderName != null)
-                {
-                    string selectedReaderPath = installedReaders[selectedReaderName];
-
-                    // Save the config
-                    ConfigManager config = new()
-                    {
-                        StartFile = startFile,
-                        PdfOpener = selectedReaderPath
-                    };
-
-                    config.SaveConfig(folderPath);
-
-                    MessageBox.Show("Configuration saved successfully!");
-                }
-            }
+            config.SaveConfig(folderPath);
+            MessageBox.Show("Configuration saved successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to save configuration: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            Console.WriteLine($"[ERROR] Config save failed: {ex.Message}");
         }
     }
 
@@ -420,4 +487,6 @@ public partial class PopupForm : Form
         }
         return null;
     }
+
+    private void PopupForm_FormClosed(object sender, FormClosedEventArgs e) => AcrobatWindowManager.EnsureAcrobatClosed();
 }

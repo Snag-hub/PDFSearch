@@ -49,7 +49,7 @@
             // progressBarIndexing
             // 
             progressBarIndexing.ForeColor = Color.SpringGreen;
-            progressBarIndexing.Location = new Point(10, 22);
+            progressBarIndexing.Location = new Point(10, 11);
             progressBarIndexing.Name = "progressBarIndexing";
             progressBarIndexing.Size = new Size(212, 23);
             progressBarIndexing.TabIndex = 1;
@@ -60,16 +60,18 @@
             statusLabel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             statusLabel.AutoSize = true;
             statusLabel.Font = new Font("Arial Nova Cond", 8.25F, FontStyle.Regular, GraphicsUnit.Point, 0);
-            statusLabel.Location = new Point(12, 54);
+            statusLabel.Location = new Point(12, 41);
+            statusLabel.MaximumSize = new Size(215, 0);
+            statusLabel.MinimumSize = new Size(210, 0);
             statusLabel.Name = "statusLabel";
-            statusLabel.Size = new Size(34, 14);
+            statusLabel.Size = new Size(210, 14);
             statusLabel.TabIndex = 2;
             statusLabel.Text = "Ready";
             statusLabel.TextAlign = ContentAlignment.MiddleCenter;
             // 
             // btnPlayPause
             // 
-            btnPlayPause.Location = new Point(12, 85);
+            btnPlayPause.Location = new Point(12, 73);
             btnPlayPause.Name = "btnPlayPause";
             btnPlayPause.Size = new Size(210, 23);
             btnPlayPause.TabIndex = 3;
@@ -81,7 +83,7 @@
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(234, 120);
+            ClientSize = new Size(234, 101);
             Controls.Add(btnPlayPause);
             Controls.Add(statusLabel);
             Controls.Add(progressBarIndexing);
@@ -89,8 +91,9 @@
             Icon = (Icon)resources.GetObject("$this.Icon");
             Margin = new Padding(3, 2, 3, 2);
             Name = "PopupForm";
-            Text = "Search App";
+            Text = "FindInPdfs";
             TopMost = true;
+            FormClosed += PopupForm_FormClosed;
             Load += PopupForm_Load;
             ResumeLayout(false);
             PerformLayout();
