@@ -643,8 +643,8 @@ public partial class SearchInPDFs : Form
                 MessageBoxIcon.Error);
         }
     }
-    
-    
+
+
 
     private void BindFromToCombos()
     {

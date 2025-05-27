@@ -8,11 +8,17 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <PlatformTarget>x64</PlatformTarget>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-        <ApplicationIcon>paper.ico</ApplicationIcon>
+        <ApplicationIcon>FIP_ICON.ico</ApplicationIcon>
         <AssemblyName>FindInPDFs</AssemblyName>
         <RootNamespace>FindInPDFs</RootNamespace>
-        <PackageIcon>paper.png</PackageIcon>
+        <PackageIcon>FIP_ICON.ico</PackageIcon>
     </PropertyGroup>
+
+    <ItemGroup>
+      <Compile Remove="NSIS\**" />
+      <EmbeddedResource Remove="NSIS\**" />
+      <None Remove="NSIS\**" />
+    </ItemGroup>
 
     <ItemGroup>
       <COMReference Include="Acrobat">
@@ -27,15 +33,19 @@
     </ItemGroup>
 
     <ItemGroup>
-      <Content Include="paper.ico" />
+      <Content Include="FIP_ICON.ico" />
     </ItemGroup>
 
     <ItemGroup>
-      <None Include="..\..\paper.png">
+      <None Include="..\..\FIP_ICON.ico">
         <Pack>True</Pack>
         <PackagePath>\</PackagePath>
       </None>
+	  <None Include="Resources\windowsdesktop-runtime-8.0.16-win-x64.exe" />
     </ItemGroup>
+	<Target Name="BuildNSIS" AfterTargets="Build">
+		<Exec Command="&quot;C:\Program Files (x86)\NSIS\makensis.exe&quot; &quot;$(SolutionDir)NSIS\FindInPdfSetup.nsi&quot;" />
+	</Target>
 
     <ItemGroup>
       <PackageReference Include="Lucene.Net" Version="4.8.0-beta00016" />
