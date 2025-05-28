@@ -30,7 +30,7 @@ PDF Search is a Windows desktop application that allows you to index and search 
 
 1. Clone the repository
 ```bash
-git clone https://github.com/yourusername/pdf-search.git
+git clone https://github.com/Snag-hub/PDFSearch.git
 ```
 
 2. Open the solution in Visual Studio
