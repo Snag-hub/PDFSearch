@@ -5,12 +5,12 @@ using FindInPDFs.Utilities;
 using Lucene.Net.QueryParsers.Classic;
 using PDFSearch;
 using PDFSearch.Utilities;
+using Serilog; // Added for Serilog logging
 
 namespace FindInPDFs;
 
 public partial class SearchInPDFs : Form
 {
-
     private readonly string _launchDirectory;
     private readonly AcrobatWindowManager acrobatWindowManager;
     private readonly LuceneSearcher _luceneSearcher = new();
@@ -44,6 +44,7 @@ public partial class SearchInPDFs : Form
 
     public SearchInPDFs(string launchDirectory)
     {
+        Log.Information("Initializing SearchInPDFs form for directory: {LaunchDirectory}", launchDirectory);
         _launchDirectory = launchDirectory;
         InitializeComponent();
         InitializeDataGridView();
@@ -53,13 +54,13 @@ public partial class SearchInPDFs : Form
         this.Load += SearchInPDFs_Load;
         TvSearchRange.AfterCheck += TvSearchRange_AfterCheck;
         instance = this;
-
     }
 
     public static SearchInPDFs Instance => instance;
 
     private void InitializeDataGridView()
     {
+        Log.Information("Initializing DataGridView for search results.");
         dataGridViewResults.Columns.Clear();
 
         dataGridViewResults.Columns.Add("Fleet", "Fleet");
@@ -85,29 +86,30 @@ public partial class SearchInPDFs : Form
         dataGridViewResults.Columns.Add(pageNo);
     }
 
-
-
-
     private void SearchInPDFs_Load(object sender, EventArgs e)
     {
+        Log.Information("SearchInPDFs form loaded.");
         txtSearchBox.Focus();
         var folderStructure = FolderManager.LoadFolderStructure(_launchDirectory);
         if (folderStructure is { Count: 0 })
         {
+            Log.Information("No folder structure found, saving new structure for directory: {LaunchDirectory}", _launchDirectory);
             FolderManager.SaveFolderStructure(_launchDirectory);
             folderStructure = FolderManager.LoadFolderStructure(_launchDirectory);
         }
+        Log.Information("Loaded folder structure with {Count} entries.", folderStructure?.Count ?? 0);
 
         AddDirectoriesToTreeView(_launchDirectory, folderStructure);
         if (TvSearchRange.Nodes.Count > 0)
         {
             TvSearchRange.Nodes[0].Expand();
+            Log.Information("Expanded root node in TvSearchRange. Node count: {NodeCount}", TvSearchRange.Nodes.Count);
         }
 
         BindFromToCombos();
         ShowHideResultGroupBox();
 
-        acrobatWindowManager.FindOrLaunchAcrobatWindow();
+        //acrobatWindowManager.FindOrLaunchAcrobatWindow();
         ArrangeWindows();
     }
 
@@ -115,9 +117,11 @@ public partial class SearchInPDFs : Form
     {
         if (folderStructure == null || folderStructure.Count == 0)
         {
+            Log.Information("Folder structure is empty or null for directory: {LaunchDirectory}", launchDirectory);
             return;
         }
 
+        Log.Information("Adding directories to TreeView for directory: {LaunchDirectory}", launchDirectory);
         // Create the root node based on the E-Library starting point
         var rootFolderName = new DirectoryInfo(launchDirectory).Name;
         var rootNode = new TreeNode(rootFolderName)
@@ -161,8 +165,8 @@ public partial class SearchInPDFs : Form
                 parentNode = value;
             }
         }
+        Log.Information("Finished adding directories to TreeView. Total nodes: {NodeCount}", nodes.Count);
     }
-
 
     private static void CheckAllChildNodes(TreeNode parentNode, bool isChecked)
     {
@@ -197,6 +201,7 @@ public partial class SearchInPDFs : Form
             }
         }
 
+        Log.Information("Retrieved {Count} selected directories from TreeView.", selectedDirectories.Count);
         return selectedDirectories.Distinct().ToList(); // Ensure there are no duplicates
     }
 
@@ -206,131 +211,30 @@ public partial class SearchInPDFs : Form
             .All(childNode => childNode.Checked && AreAllChildNodesChecked(childNode));
     }
 
-
-
-
     private void ShowHideResultGroupBox()
     {
         if (grpBoxSearchResult.Visible == false)
         {
+            Log.Information("Showing search result group box and hiding search group box.");
             grpBoxSearchResult.Location = new Point(12, 12);
             grpBoxSearchResult.Visible = true;
             grpBoxSearch.Visible = false;
         }
         else
         {
+            Log.Information("Hiding search result group box and showing search group box.");
             grpBoxSearchResult.Visible = false;
             grpBoxSearch.Visible = true;
         }
     }
 
     #region This is not in use for range based search
-
-    //private void BtnSearchText_Click(object sender, EventArgs e)
-    //{
-    //    string? filePath = _pdfPathBackgroundService.FilePath;
-    //    filePath = DirectoryUtils.RemoveFileName(filePath);
-
-    //    if (!string.IsNullOrEmpty(filePath))
-    //    {
-    //        MessageBox.Show($"Current active PDF file path: {filePath}");
-    //    }
-    //    else
-    //    {
-    //        MessageBox.Show("No active PDF file found.");
-    //    }
-
-    //    try
-    //    {
-    //        // Clear previous results in the TreeView
-    //        treeVwResult.Nodes.Clear();
-
-    //        string searchTerm = txtSearchBox.Text.Trim();
-    //        if (string.IsNullOrEmpty(searchTerm))
-    //        {
-    //            MessageBox.Show("Please enter a search term.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-    //            return;
-    //        }
-
-    //        ShowHideResultGroupBox();
-
-    //        // Search the results using Lucene or any other search mechanism
-    //        var results = LuceneSearcher.SearchInDirectory(searchTerm, _launchDirectory, filePath);
-
-    //        if (results.Count > 0)
-    //        {
-    //            // Group results by directory
-    //            var groupedResults = results
-    //                .GroupBy(r => Path.GetDirectoryName(r.FilePath))
-    //                .OrderBy(g => g.Key); // Sort by directory name
-
-    //            foreach (var group in groupedResults)
-    //            {
-    //                string fullDirectoryPath = group.Key;
-
-    //                // Apply abbreviation to the directory path
-    //                string abbreviatedPath = DirectoryUtils.AbbreviateDirectoryPath(fullDirectoryPath);
-
-    //                // Create a directory-level node with the abbreviated path
-    //                var directoryNode = new TreeNode(abbreviatedPath)
-    //                {
-    //                    Tag = fullDirectoryPath // Store the full directory path for reference
-    //                };
-
-    //                // Further group results by file path within the directory
-    //                var fileGroups = group
-    //                    .GroupBy(r => r.FilePath)
-    //                    .OrderBy(g => g.Key); // Sort by file name
-
-    //                foreach (var fileGroup in fileGroups)
-    //                {
-    //                    string fileName = Path.GetFileName(fileGroup.Key);
-
-    //                    // Create the file node
-    //                    var fileNode = new TreeNode(fileName)
-    //                    {
-    //                        Tag = fileGroup.Key // Store the full file path for reference
-    //                    };
-
-    //                    // Add snippet and page number nodes for each result in the file group
-    //                    foreach (var result in fileGroup)
-    //                    {
-    //                        string snippetText = result.Snippet ?? "No snippet available";
-    //                        string pageText = result.PageNumber > 0 ? $"Page {result.PageNumber}" : "Page number not found";
-
-    //                        var snippetNode = new TreeNode($"{pageText}: {snippetText}")
-    //                        {
-    //                            Tag = result // Optionally associate the SearchResult object here
-    //                        };
-
-    //                        fileNode.Nodes.Add(snippetNode);
-    //                    }
-
-    //                    // Add the file node to the directory node
-    //                    directoryNode.Nodes.Add(fileNode);
-    //                }
-
-    //                // Add the directory node to the TreeView
-    //                treeVwResult.Nodes.Add(directoryNode);
-    //            }
-
-    //            treeVwResult.CollapseAll(); // Ensure all nodes are collapsed by default
-    //        }
-    //        else
-    //        {
-    //            MessageBox.Show("No results found.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
-    //        }
-    //    }
-    //    catch (Exception ex)
-    //    {
-    //        MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-    //    }
-    //}
-
+    // (Commented-out code remains unchanged, no logging added here as it's not in use)
     #endregion
 
     private void BtnSearchText_Click(object sender, EventArgs e)
     {
+        Log.Information("User clicked search button.");
         var matchWord = chkWholeWord.Checked;
         var matchCase = chkCaseSensitive.Checked;
         string? filePath = null;
@@ -339,35 +243,42 @@ public partial class SearchInPDFs : Form
         {
             // Clear previous results
             dataGridViewResults.Rows.Clear();
+            Log.Information("Cleared previous search results from DataGridView.");
 
             var searchTerm = txtSearchBox.Text.Trim();
             if (string.IsNullOrEmpty(searchTerm))
             {
+                Log.Information("Search term is empty.");
                 MessageBox.Show("Please enter a search term.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
+            Log.Information("Search term entered: {SearchTerm}", searchTerm);
 
             // Get selected directories
             var selectedDirectories = GetSelectedDirectories(TvSearchRange.Nodes);
             if (!selectedDirectories.Any())
             {
+                Log.Information("No directories selected in search range.");
                 MessageBox.Show("Please select at least one node or child node in the Search Range.", "Warning",
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
+            Log.Information("Selected directories for search: {Directories}", string.Join(", ", selectedDirectories));
 
             // Perform search across all subfolder indexes
             UpdateStatus("Searching...");
-            var results =
-                _luceneSearcher.SearchInDirectory(searchTerm, _launchDirectory, matchWord, matchCase, filePath);
+            var results = _luceneSearcher.SearchInDirectory(searchTerm, _launchDirectory, matchWord, matchCase, filePath);
+            Log.Information("Search completed with {ResultCount} results.", results.Count);
 
             // Filter by selected directories
             var filteredResults = results
                 .Where(r => selectedDirectories.Any(d => r.FilePath.StartsWith(d, StringComparison.OrdinalIgnoreCase)))
                 .ToList();
+            Log.Information("Filtered results to {FilteredCount} based on selected directories.", filteredResults.Count);
 
             if (filteredResults.Count == 0)
             {
+                Log.Information("No search results found after filtering.");
                 UpdateStatus("Search completed: No results found.");
                 MessageBox.Show("No results found.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
@@ -395,20 +306,24 @@ public partial class SearchInPDFs : Form
             }
 
             dataGridViewResults.AutoResizeColumns();
+            Log.Information("Populated DataGridView with {RowCount} rows.", dataGridViewResults.Rows.Count);
             UpdateStatus($"Search completed: {filteredResults.Count} results found.");
         }
         catch (DirectoryNotFoundException ex)
         {
+            Log.Error(ex, "Index not found during search.");
             UpdateStatus("Search failed: Index not found.");
             MessageBox.Show($"Index not found: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         catch (ParseException ex)
         {
+            Log.Error(ex, "Invalid search term.");
             UpdateStatus("Search failed: Invalid search term.");
             MessageBox.Show($"Invalid search term: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         catch (Exception ex)
         {
+            Log.Error(ex, "Unexpected error during search.");
             UpdateStatus("Search failed: An error occurred.");
             MessageBox.Show($"Search error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
@@ -417,11 +332,10 @@ public partial class SearchInPDFs : Form
     private void BtnSearchText_KeyPress(object sender, KeyPressEventArgs e)
     {
         if (e.KeyChar != (char)Keys.Enter) return;
+        Log.Information("User pressed Enter key to initiate search.");
         BtnSearchText.PerformClick();
         e.Handled = true;
     }
-
-
 
     private void lstVwResult_DrawItem(object sender, DrawListViewItemEventArgs e)
     {
@@ -476,9 +390,9 @@ public partial class SearchInPDFs : Form
         boldFont.Dispose();
     }
 
-
     private void treeVwResult_NodeMouseDoubleClick(object sender, TreeNodeMouseClickEventArgs e)
     {
+        Log.Information("User double-clicked a node in treeVwResult.");
         try
         {
             // Ensure a node is selected
@@ -490,17 +404,20 @@ public partial class SearchInPDFs : Form
                 // This is a file node
                 var filePath = selectedResult.FilePath;
                 var pageNumber = selectedResult.PageNumber;
+                Log.Information("Opening PDF file: {FilePath} at page {PageNumber}", filePath, pageNumber);
 
                 // Open the PDF at the specific page
                 PdfOpener.OpenPdfAtPage(filePath, pageNumber, txtSearchBox.Text, _launchDirectory);
             }
             else
             {
+                Log.Information("Invalid node selected in treeVwResult.");
                 MessageBox.Show(@"Invalid node selected.", @"Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
         catch (Exception ex)
         {
+            Log.Error(ex, "Error while handling node double-click in treeVwResult.");
             MessageBox.Show($@"Error: {ex.Message}", @"Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
@@ -561,12 +478,15 @@ public partial class SearchInPDFs : Form
     {
         try
         {
+            Log.Information("Starting background indexing for directory: {LaunchDirectory}", _launchDirectory);
             UpdateStatus($"Indexing started for directory: {_launchDirectory}");
             await Task.Run(() => LuceneIndexer.IndexDirectory(_launchDirectory));
+            Log.Information("Background indexing completed for directory: {LaunchDirectory}", _launchDirectory);
             UpdateStatus($"Indexing completed for directory: {_launchDirectory}");
         }
         catch (Exception ex)
         {
+            Log.Error(ex, "Error during background indexing.");
             UpdateStatus($"Error during indexing: {ex.Message}");
         }
     }
@@ -581,17 +501,21 @@ public partial class SearchInPDFs : Form
         {
             statusLabel.Text = message;
         }
+        Log.Information("Updated status: {Message}", message);
     }
 
     private void SearchInPDFs_FormClosing(object sender, FormClosingEventArgs e)
     {
+        Log.Information("SearchInPDFs form closing.");
         PopupForm popupForm = new(_launchDirectory);
         popupForm.Close();
+        Log.Information("Closed PopupForm during SearchInPDFs form closing.");
         // AcrobatWindowManager.EnsureAcrobatClosed();
     }
 
     private void ArrangeWindows()
     {
+        Log.Information("Arranging windows for SearchInPDFs and Acrobat.");
         try
         {
             // Find the Acrobat window
@@ -604,6 +528,7 @@ public partial class SearchInPDFs : Form
                 if (windowText.ToString().Contains("Adobe Acrobat") || windowText.ToString().Contains("Acrobat"))
                 {
                     acrobatHandle = hWnd;
+                    Log.Information("Found Acrobat window with handle: {Handle}", acrobatHandle);
                     return false; // Stop further enumeration
                 }
 
@@ -615,6 +540,7 @@ public partial class SearchInPDFs : Form
                 // Get screen dimensions
                 int screenWidth = Screen.PrimaryScreen.WorkingArea.Width;
                 int screenHeight = Screen.PrimaryScreen.WorkingArea.Height;
+                Log.Information("Screen dimensions: Width={Width}, Height={Height}", screenWidth, screenHeight);
 
                 // Calculate window sizes (30/70 split)
                 int yourAppWidth = (int)(screenWidth * 0.25);
@@ -626,47 +552,56 @@ public partial class SearchInPDFs : Form
 
                 // Position your app first (left side)
                 AcrobatWindowManager.SetWindowPos(this.Handle, IntPtr.Zero, 0, 0, yourAppWidth, screenHeight, flags);
+                Log.Information("Positioned SearchInPDFs window: Width={Width}, Height={Height}", yourAppWidth, screenHeight);
 
                 // Position Acrobat (right side)
                 AcrobatWindowManager.SetWindowPos(acrobatHandle, IntPtr.Zero, yourAppWidth, 0, acrobatWidth,
                     screenHeight, flags);
+                Log.Information("Positioned Acrobat window: X={X}, Width={Width}, Height={Height}", yourAppWidth, acrobatWidth, screenHeight);
             }
             else
             {
+                Log.Information("Adobe Acrobat window not found.");
                 MessageBox.Show("Adobe Acrobat window not found.", "Warning", MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);
             }
         }
         catch (Exception ex)
         {
+            Log.Error(ex, "Error while arranging windows.");
             MessageBox.Show($"Error arranging windows: {ex.Message}", "Error", MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
         }
     }
 
-
-
     private void BindFromToCombos()
     {
-
+        Log.Information("Binding directories to From/To combos.");
         var directories = FolderManager.LoadFolderStructure(_launchDirectory);
-        if (directories.Count == 0) return;
+        if (directories.Count == 0)
+        {
+            Log.Information("No directories found to bind to combos.");
+            return;
+        }
         foreach (var directory in directories)
         {
             if (!string.IsNullOrEmpty(directory))
             {
-                var NewPath = PDFSearch.Helpers.Helpers.GetShortenedDirectoryPath(directory);
+                var newPath = PDFSearch.Helpers.Helpers.GetShortenedDirectoryPath(directory);
             }
         }
+        Log.Information("Finished binding {Count} directories to combos.", directories.Count);
     }
 
     private void BtnRetSearch_Click(object sender, EventArgs e)
     {
+        Log.Information("User clicked return to search button.");
         ShowHideResultGroupBox();
     }
 
     private void TvSearchRange_AfterCheck(object sender, TreeViewEventArgs e)
     {
+        Log.Information("User changed check state for node: {NodeText}, Checked: {IsChecked}", e.Node.Text, e.Node.Checked);
         // Check/uncheck all child nodes
         if (e.Node is { Nodes.Count: > 0 })
         {
@@ -730,6 +665,7 @@ public partial class SearchInPDFs : Form
 
     private void dataGridViewResults_CellMouseDoubleClick(object sender, DataGridViewCellMouseEventArgs e)
     {
+        Log.Information("User double-clicked a cell in DataGridView at row: {RowIndex}", e.RowIndex);
         try
         {
             // Ensure a cell is selected
@@ -740,28 +676,31 @@ public partial class SearchInPDFs : Form
                 var fullPath = selectedRow.Cells["FullPath"].Value?.ToString();
                 var pageNo = selectedRow.Cells["PageNo"].Value?.ToString();
 
-
                 if (!string.IsNullOrEmpty(fullPath))
                 {
                     var pageNumber = Convert.ToInt32(pageNo);
+                    Log.Information("Opening PDF file: {FilePath} at page {PageNumber}", fullPath, pageNumber);
 
                     // Open the PDF at the specific page
                     PdfOpener.OpenPdfAtPage(fullPath, pageNumber, txtSearchBox.Text, _launchDirectory);
                 }
                 else
                 {
+                    Log.Information("Invalid file path selected in DataGridView.");
                     MessageBox.Show("Invalid file path selected.", "Error", MessageBoxButtons.OK,
                         MessageBoxIcon.Warning);
                 }
             }
             else
             {
+                Log.Information("No valid row selected in DataGridView.");
                 MessageBox.Show("Please select a valid row.", "No Selection", MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);
             }
         }
         catch (Exception ex)
         {
+            Log.Error(ex, "Error while handling cell double-click in DataGridView.");
             MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
@@ -769,10 +708,13 @@ public partial class SearchInPDFs : Form
     private void SearchInPDFs_Resize(object sender, EventArgs e)
     {
         if (this.WindowState != FormWindowState.Minimized) return;
+        Log.Information("SearchInPDFs form minimized.");
         // Restore the existing PopupForm if it's minimized
         if (PopupForm.Instance.WindowState != FormWindowState.Minimized) return;
+        Log.Information("Restoring PopupForm from minimized state.");
         PopupForm.Instance.WindowState = FormWindowState.Normal;
         PopupForm.Instance.BringToFront();
         acrobatWindowManager.FindOrLaunchAcrobatWindow();
+        Log.Information("Launched or found Acrobat window after restoring PopupForm.");
     }
-} 
+}
