@@ -556,7 +556,37 @@ public partial class PopupForm : Form
 
     private void PopupForm_FormClosed(object sender, FormClosedEventArgs e)
     {
-        Log.Information("PopupForm closed, ensuring Acrobat is closed.");
-        AcrobatWindowManager.EnsureAcrobatClosed();
+        try
+        {
+            // Log the reason for closure
+            string closeReason = e.CloseReason switch
+            {
+                CloseReason.UserClosing => "User closed the form",
+                CloseReason.ApplicationExitCall => "Application exited programmatically",
+                CloseReason.WindowsShutDown => "System shutdown",
+                CloseReason.TaskManagerClosing => "Closed via Task Manager",
+                CloseReason.FormOwnerClosing => "Owner form closing",
+                CloseReason.MdiFormClosing => "MDI parent form closing",
+                CloseReason.None => "No specific reason (programmatic closure)",
+                _ => $"Unknown reason ({e.CloseReason})"
+            };
+
+            Log.Information("PopupForm is closing. Reason: {CloseReason}", closeReason);
+            Console.WriteLine($"[INFO] PopupForm closing. Reason: {closeReason}");
+
+            // Ensure Acrobat is closed
+            AcrobatWindowManager.EnsureAcrobatClosed();
+            Log.Information("Acrobat ensured closed during PopupForm closure.");
+
+            // Log the final state, similar to the pause operation
+            Log.Information("PopupForm closed for folder: {FolderPath}. Reason: {CloseReason}", folderPath, closeReason);
+            Console.WriteLine($"[INFO] PopupForm closed for folder: {folderPath}. Reason: {closeReason}");
+        }
+        catch (Exception ex)
+        {
+            // Log any errors that occur during the closing process
+            Log.Error(ex, "Error while closing PopupForm for folder: {FolderPath}", folderPath);
+            Console.WriteLine($"[ERROR] Error while closing PopupForm: {ex.Message}");
+        }
     }
 }
